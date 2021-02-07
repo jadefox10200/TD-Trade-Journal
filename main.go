@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/securecookie"
@@ -16,11 +17,68 @@ import (
 	"golang.org/x/oauth2"
 )
 
+var port = ":8080"
+
+var hashKey = []byte("")
+var blockKey = []byte("")
+
+func main() {
+
+	hashKey = securecookie.GenerateRandomKey(32)
+	blockKey = securecookie.GenerateRandomKey(32)
+
+	ck := securecookie.New(hashKey, blockKey)
+
+	clientID := os.Getenv("TDAMERITRADE_CLIENT_ID")
+	if clientID == "" {
+		log.Fatal("Unauthorized: No client ID present")
+	}
+
+	authenticator := tdameritrade.NewAuthenticator(
+		&HTTPHeaderStore{
+			Cookie: ck,
+		},
+		oauth2.Config{
+			ClientID: clientID,
+			Endpoint: oauth2.Endpoint{
+				TokenURL: "https://api.tdameritrade.com/v1/oauth2/token",
+				AuthURL:  "https://auth.tdameritrade.com/auth",
+			},
+			RedirectURL: "http://localhost:8080/callback",
+		},
+	)
+	handlers := &TDHandlers{authenticator: authenticator}
+
+	http.HandleFunc("/authenticate", handlers.Authenticate)
+	http.HandleFunc("/callback", handlers.Callback)
+	http.HandleFunc("/quote", handlers.Quote)
+	http.HandleFunc("/movers", handlers.Movers)
+	http.HandleFunc("/transactionHistory", handlers.TransactionHistory)
+
+	http.HandleFunc("/tpl/", handlers.Templates)
+
+	//HANDLE ALL FILES IN THE assets FOLDER THAT THE SITE WILL NEED AND THAT A USER CAN ACCESS.
+	http.Handle("/assets/", http.StripPrefix("/assets", http.FileServer(http.Dir("assets/"))))
+
+	//SERVE THE PUBLIC FOLDER
+	http.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir("public/"))))
+
+	http.HandleFunc("/", handlers.Index)
+
+	log.Fatal(http.ListenAndServe(port, nil))
+}
+
 type HTTPHeaderStore struct {
 	Cookie *securecookie.SecureCookie
 }
 
+const TimeFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
+
 func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter, req *http.Request) error {
+
+	fmt.Println("MyAccess: ", token.AccessToken)
+	fmt.Println("MyRefresh: ", token.RefreshToken)
+	fmt.Println("MyExpiry: ", token.Expiry)
 
 	err := s.SetEncodedCookie(w, "accessToken", token.AccessToken, token.Expiry)
 	if err != nil {
@@ -48,7 +106,9 @@ func (s *HTTPHeaderStore) SetEncodedCookie(w http.ResponseWriter, cookieName str
 		Name:    cookieName,
 		Value:   encoded,
 		Expires: expiry,
+		// MaxAge: 1800,
 	}
+
 	http.SetCookie(w, cookie)
 
 	return nil
@@ -82,7 +142,7 @@ func (s HTTPHeaderStore) GetToken(req *http.Request) (*oauth2.Token, error) {
 	return &oauth2.Token{
 		AccessToken:  accessToken.Value,
 		RefreshToken: refreshToken.Value,
-		Expiry:       refreshToken.Expires,
+		Expiry:       accessToken.Expires,
 	}, nil
 }
 
@@ -144,29 +204,50 @@ func (h *TDHandlers) TransactionHistory(w http.ResponseWriter, req *http.Request
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		//we assume that if there is an error, we should log back in:
+		redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
+		http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	start, okStart := req.URL.Query()["start"]
+	end, okEnd := req.URL.Query()["end"]
+	if !okStart || !okEnd || start[0] == "" || end[0] == "" {
+		http.Error(w, "Your date provided isn't valid. Must provide start and end date", 400)
 		return
 	}
 
 	opts := &tdameritrade.TransactionHistoryOptions{
-		StartDate: "2021-02-01",
-		EndDate:   "2021-02-03",
+		Type:      "TRADE",
+		StartDate: start[0],
+		EndDate:   end[0],
 	}
 
 	acctID := os.Getenv("TDAMERITRADE_ACCT_ID")
 
-	transactions, resp, err := client.TransactionHistory.GetTransactions(ctx, acctID, opts)
-
-	body, err := json.Marshal(transactions)
+	transactions, _, err := client.TransactionHistory.GetTransactions(ctx, acctID, opts)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+		http.Error(w,
+			fmt.Sprintf("GetTransactions produced the following error: %s.\n", err.Error()),
+			400)
+	}
+	err = json.NewEncoder(w).Encode(transactions)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetTransactions produced the following error during encoding: %s.\n", err.Error()),
+			500)
 	}
 
-	w.Write(body)
-	w.WriteHeader(resp.StatusCode)
+	return
+	// body, err := json.Marshal(transactions)
+	// if err != nil {
+	// 	w.Write([]byte(err.Error()))
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	return
+	// }
+	//
+	// w.Write(body)
+	// w.WriteHeader(resp.StatusCode)
 
 }
 
@@ -208,16 +289,16 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 func (h *TDHandlers) Index(w http.ResponseWriter, req *http.Request) {
 
 	//make sure we are logged in before going to index.html
-	_, err := h.authenticator.Store.GetToken(req)
-	if err != nil {
-		fmt.Println("Error: ", err.Error())
-		//reroute to login:
-		redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
-		http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
-		return
-	}
+	// _, err := h.authenticator.Store.GetToken(req)
+	// if err != nil {
+	// 	fmt.Println("Error: ", err.Error())
+	// 	//reroute to login:
+	// 	redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
+	// 	http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
+	// 	return
+	// }
 
-	renderTemplate(w, req, "monthView", nil)
+	renderTemplate(w, req, "home", nil)
 
 	// http.ServeFile(w, req, "index.html")
 
@@ -249,52 +330,150 @@ func (h *TDHandlers) Movers(w http.ResponseWriter, req *http.Request) {
 
 }
 
-var port = ":8080"
+type TransactionRow struct {
+	OrderID                       string  `json:"orderId"`
+	Type                          string  `json:"type"`
+	ClearingReferenceNumber       string  `json:"clearingReferenceNumber"`
+	SubAccount                    string  `json:"subAccount"`
+	SettlementDate                string  `json:"settlementDate"`
+	SMA                           float64 `json:"sma"`
+	RequirementReallocationAmount float64 `json:"requirementReallocationAmount"`
+	DayTradeBuyingPowerEffect     float64 `json:"dayTradeBuyingPowerEffect"`
+	NetAmount                     float64 `json:"netAmount"`
+	TransactionDate               string  `json:"transactionDate"`
+	OrderDate                     string  `json:"orderDate"`
+	TransactionSubType            string  `json:"transactionSubType"`
+	TransactionID                 int64   `json:"transactionId"`
+	CashBalanceEffectFlag         bool    `json:"cashBalanceEffectFlag"`
+	Description                   string  `json:"description"`
+	ACHStatus                     string  `json:"achStatus"`
+	AccruedInterest               float64 `json:"accruedInterest"`
+	Fees                          float64 `json:"fees"`
+	AccountID                     int32   `json:"accountId"`
+	Amount                        float64 `json:"amount"`
+	Price                         float64 `json:"price"`
+	Cost                          float64 `json:"cost"`
+	ParentOrderKey                int32   `json:"parentOrderKey"`
+	ParentChildIndicator          string  `json:"parentChildIndicator"`
+	Instruction                   string  `json:"instruction"`
+	PositionEffect                string  `json:"positionEffect"`
+	Symbol                        string  `json:"symbol"`
+	UnderlyingSymbol              string  `json:"underlyingSymbol"`
+	OptionExpirationDate          string  `json:"optionExpirationDate"`
+	OptionStrikePrice             float64 `json:"optionStrikePrice"`
+	PutCall                       string  `json:"putCall"`
+	CUSIP                         string  `json:"cusip"`
+	InstrumentDescription         string  `json:"instrumentDescription"`
+	AssetType                     string  `json:"assetType"`
+	BondMaturityDate              string  `json:"bondMaturityDate"`
+	BondInterestRate              float64 `json:"bondInterestRate"`
+}
 
-var hashKey = []byte("")
-var blockKey = []byte("")
+// func ConstructTransactionRows(tdameritrade.Transactions) float64 {
+// 	var sum float64
+// 	for _, v := range t {
+// 		sum += v
+// 	}
+//
+// 	var t = &TransactionRow{}
+//
+// 	return t
+// }
+//
+// func (h *TDHandlers) LoadTradeData(w http.ResponseWriter, req *http.Request) {
+//
+// 	ctx := context.Background()
+// 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
+// 	if err != nil {
+// 		w.Write([]byte(err.Error()))
+// 		w.WriteHeader(http.StatusInternalServerError)
+// 		return
+// 	}
+//
+// 	opts := &tdameritrade.TransactionHistoryOptions{
+// 		StartDate: "2021-02-01",
+// 		EndDate:   "2021-02-03",
+// 	}
+//
+// 	acctID := os.Getenv("TDAMERITRADE_ACCT_ID")
+//
+// 	transactions, resp, err := client.TransactionHistory.GetTransactions(ctx, acctID, opts)
+//
+// 	uploadTransactionsSQL(transactions)
+//
+// 	body, err := json.Marshal(transactions)
+// 	if err != nil {
+// 		w.Write([]byte(err.Error()))
+// 		w.WriteHeader(http.StatusInternalServerError)
+// 		return
+// 	}
+//
+// 	w.Write(body)
+// 	w.WriteHeader(resp.StatusCode)
+//
+// }
 
-func main() {
+//change this so it is simply a generic template loader:
+func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 
-	hashKey = securecookie.GenerateRandomKey(32)
-	blockKey = securecookie.GenerateRandomKey(32)
+	name := strings.TrimLeft(r.URL.Path, "/tpl/")
 
-	ck := securecookie.New(hashKey, blockKey)
+	var tokenState bool
+	// _, err := h.authenticator.Store.GetToken(r)
+	// if err == nil {
+	// 	tokenState = true
+	// }
 
-	clientID := os.Getenv("TDAMERITRADE_CLIENT_ID")
-	if clientID == "" {
-		log.Fatal("Unauthorized: No client ID present")
+	ctx := context.Background()
+	_, err := h.authenticator.AuthenticatedClient(ctx, r)
+	if err == nil {
+		tokenState = true
 	}
 
-	authenticator := tdameritrade.NewAuthenticator(
-		&HTTPHeaderStore{
-			Cookie: ck,
-		},
-		oauth2.Config{
-			ClientID: clientID,
-			Endpoint: oauth2.Endpoint{
-				TokenURL: "https://api.tdameritrade.com/v1/oauth2/token",
-				AuthURL:  "https://auth.tdameritrade.com/auth",
-			},
-			RedirectURL: "http://localhost:8080/callback",
-		},
-	)
-	handlers := &TDHandlers{authenticator: authenticator}
-	http.HandleFunc("/authenticate", handlers.Authenticate)
-	http.HandleFunc("/callback", handlers.Callback)
-	http.HandleFunc("/quote", handlers.Quote)
-	http.HandleFunc("/movers", handlers.Movers)
-	http.HandleFunc("/transactionHistory", handlers.TransactionHistory)
+	if name == "dayView" {
+		var dateTime = time.Now().Format("Mon, 2 Jan 2006")
+		var dateRaw = time.Now().Format("2006-01-02")
 
-	//HANDLE ALL FILES IN THE assets FOLDER THAT THE SITE WILL NEED AND THAT A USER CAN ACCESS.
-	http.Handle("/assets/", http.StripPrefix("/assets", http.FileServer(http.Dir("assets/"))))
+		dateInput := r.URL.Query().Get("date")
 
-	//SERVE THE PUBLIC FOLDER
-	http.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir("public/"))))
+		//if we got a date from the user so need to parse it and serve that date:
+		if dateInput != "" {
+			parsedDate, err := time.Parse("2006-01-02", dateInput)
+			dateTime = parsedDate.Format("Mon, 2 Jan 2006")
+			dateRaw = parsedDate.Format("2006-01-02")
+			if err != nil {
+				http.Error(w,
+					fmt.Sprintf("Couldn't parse provided date. Must be format YYYY-MM-MM: %s", err.Error()),
+					500,
+				)
+				return
+			}
+		}
 
-	http.HandleFunc("/", handlers.Index)
+		data := struct {
+			LoggedIn     bool
+			Date         string
+			DateRaw      string
+			TradeCount   int
+			SharesTraded int
+			ClosedGross  float64
+			TotalFees    float64
+			FinalPL      float64
+			Loaded       bool
+		}{tokenState, dateTime, dateRaw, 0, 0, 0.0, 0.0, 0.0, false}
 
-	log.Fatal(http.ListenAndServe(port, nil))
+		renderTemplate(w, r, name, data)
+		return
+
+	}
+
+	data := struct {
+		LoggedIn bool
+	}{tokenState}
+
+	renderTemplate(w, r, name, data)
+
+	return
 }
 
 func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
@@ -332,7 +511,7 @@ func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data in
 		Footer   template.HTML
 	}
 	model := Model{
-		PageName: template.HTML(`<link rel="stylesheet" type="text/css" href="/assets/css/pagecss/` + name + `.css">`),
+		PageName: template.HTML(`<link rel="stylesheet" type="text/css" href="/public/css/` + name + `.css">`),
 		Header:   template.HTML(bufHeader.String()),
 		Body:     template.HTML(bufBody.String()),
 		Footer:   template.HTML(bufBody.String()),
