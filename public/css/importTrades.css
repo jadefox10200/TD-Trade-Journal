@@ -1,0 +1,15 @@
+
+input {
+	width : 200px;
+}
+
+#mainContainer {
+	width: 80%;
+	margin: auto;
+
+}
+
+#transactionTable {
+	overflow-y: scroll;
+	min-height: 500px;
+}

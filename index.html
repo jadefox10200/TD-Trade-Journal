@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+  <head>
+    <title>Trade Journal</title>
+	<script type="text/javascript" src="assets/js/jquery-1.11.0.js"></script>
+	<!-- <script type="text/javascript" src="assets/js/semantic-range.js"></script>	 -->
+	<script type="text/javascript" src="assets/js/moment.min.js"></script>
+	<script type="text/javascript" src="assets/js/underscore-min.js"></script>
+
+	<!-- SEMANTIC JS -->
+	<script type="text/javascript" src="assets/Semantic-UI-2.3.0/dist/semantic.min.js"></script>
+	<script type="text/javascript" src="assets/Semantic-UI-2.3.0/dist/components/progress.min.js"></script>
+	<script type="text/javascript" src="assets/Semantic-UI-2.3.0/dist/components/modal.min.js"></script>
+
+	<script type="text/javascript" src="assets/js/daterangepicker.js"></script>
+
+
+  	<script src='assets/fullcalendar/lib/main.js'></script>
+
+
+
+<!-- 	// <script type="text/javascript" src="assets/lib/datatables/datatables.min.js"></script>
+	// <script type="text/javascript" src="assets/lib/datatables/dataTables.semanticui.js"></script>  -->
+
+	<!-- CUSTOM JS -->
+	<script type="text/javascript" src="assets/js/app.js"></script>
+
+    <!-- SEMANTIC CSS -->
+	<link rel="stylesheet" type="text/css" href="assets/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="assets/Semantic-UI-2.3.0/dist/semantic.min.css" type="text/css">
+    <link rel="stylesheet" href="assets/Semantic-UI-2.3.0/dist/components/progress.min.css" type="text/css">
+    <link rel="stylesheet" href="assets/Semantic-UI-2.3.0/dist/components/modal.min.css" type="text/css">
+	<link rel="stylesheet" type="text/css" href="assets/css/daterangepicker.css" />
+	<link href='assets/fullcalendar/lib/main.css' rel='stylesheet' />
+
+    <!-- DATATABLES CSS -->
+   <!-- <link rel="stylesheet" href="assets/lib/datatables/datatables.min.css" type="text/css">
+   <link rel="stylesheet" href="assets/lib/datatables/dataTables.semanticui.min.css" type="text/css"> -->
+
+    <!-- CUSTOM CSS -->
+    <link rel="stylesheet" href="assets/css/index.css" type="text/css">
+
+	<style>
+
+		body {
+		  margin: 40px 10px;
+		  padding: 0;
+		  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+		  font-size: 14px;
+		}
+
+		#calendar {
+		  max-width: 1100px;
+		  margin: 0 auto;
+		}
+
+		.group-header {
+			background-color:#BDE7F7;
+			padding-left: 5px !important;
+		}
+	</style>
+  </head>
+	<body style="width: 100%">
+		<div>
+
+			<div>Reached the home page</div>
+			<div><button id="btnGo">Go</button>
+			<div class="result"></div>
+
+			<div><button id="btnHistory">History</button>
+
+			<div>
+				<input type="text" name="singleDate" value="" />
+			</div>
+
+			<div class="row">
+				<div id="reportrange" style="background: #fff; cursor: pointer; padding: 5px 10px; border: 1px solid #ccc; width: 100%">
+					<i class="fa fa-calendar"></i>&nbsp;
+					<span></span> <i class="fa fa-caret-down"></i>
+				</div>
+			</div>
+
+		</div>
+
+		<div id='calendar'></div>
+
+		<script type="text/javascript">
+
+		document.addEventListener('DOMContentLoaded', function() {
+	        var calendarEl = document.getElementById('calendar');
+	        var calendar = new FullCalendar.Calendar(calendarEl, {
+	        	initialView: 'dayGridMonth',
+				height: 700,
+				dateClick: function(info) {
+					alert('Date: ' + info.dateStr);
+					alert('Resource ID: ' + info.resource.id);
+				},
+				eventClick: function(info) {
+					alert('Event: ' + info.event.title);
+					alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
+					alert('View: ' + info.view.type);
+
+					// change the border color just for fun
+					// info.el.style.borderColor = 'red';
+				},
+				eventSources: [
+
+					// JSON feed:
+					//we will most likely have a feed for each type of trade:
+					//This way we can have different colors for day trades vs multi-day trades
+					// {
+					//   url: '/myfeed.php',
+					//   color: 'yellow',   // an option!
+					//   textColor: 'black' // an option!
+					// }
+
+				  // your event source
+					{
+						events: [ // put the array in the `events` property
+						  {
+							title  : 'event1',
+							start  : '2010-01-01'
+						  },
+						  {
+							title  : 'event2',
+							start  : '2021-02-01',
+							end : '2021-02-01'
+						  },
+						  {
+							title  : 'event3',
+							start  : '2010-01-09',
+						  }
+						],
+						color: 'black',     // an option!
+						textColor: 'yellow' // an option!
+					},
+					{
+						events : [
+							{
+								title: 'swing1',
+								start : '2021-02-01',
+								end : '2021-02-03',
+							}
+						],
+						color: 'red'
+					}
+
+				  	// any other event sources...
+
+				]
+	        });
+	        calendar.render();
+      	});
+
+		$( document ).ready(function() {
+
+			$("#btnGo").on('click' ,function() {
+				console.log("clicked")
+				$.get( "quote?ticker=SPY", function() {
+
+
+				})
+				.done(function(data) {
+					jdata = JSON.parse(data)
+					console.table(data.SPY)
+				})
+				.fail(function() {
+					alert( "error" );
+				})
+				// .always(function() {
+				// 	alert( "finished" );
+				// });
+
+			})
+
+
+			$("#btnHistory").on('click' ,function() {
+				console.log("clicked")
+				$.get( "transactionHistory?", function() {
+
+				})
+				.done(function(data) {
+					jdata = JSON.parse(data)
+					console.table(jdata)
+				})
+				.fail(function() {
+					alert( "error" );
+				})
+				// .always(function() {
+				// 	alert( "finished" );
+				// });
+
+			})
+
+
+		});
+
+
+
+		$(function() {
+			$('input[name="singleDate"]').daterangepicker({
+				singleDatePicker: true,
+				showDropdowns: true,
+				minYear: 1901,
+				maxYear: parseInt(moment().format('YYYY'),10)
+			},
+			// function(start, end, label) {
+			// 	var years = moment().diff(start, 'years');
+			// 	alert("You are " + years + " years old!");
+			// }
+			);
+
+			// var start = moment().subtract(29, 'days');
+			var start = moment().startOf('month');
+		    var end = moment().endOf('month');
+
+		    function cb(start, end) {
+		        $('#reportrange span').html(start.format('MMMM D, YYYY') + ' - ' + end.format('MMMM D, YYYY'));
+		    }
+
+		    $('#reportrange').daterangepicker({
+		        startDate: start,
+		        endDate: end,
+				showDropdowns: true,
+		        ranges: {
+		           'Today': [moment(), moment()],
+		           'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+		           'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+		           'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+		           'This Month': [moment().startOf('month'), moment().endOf('month')],
+		           'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+		        }
+		    }, cb);
+
+		    cb(start, end);
+		});
+
+
+
+			  // .always(function() {
+			  //   alert( "finished" );
+			  // });
+
+
+		</script>
+	</body>
+</html>

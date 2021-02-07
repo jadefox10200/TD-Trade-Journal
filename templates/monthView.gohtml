@@ -1,0 +1,172 @@
+{{ define "monthView" }}
+
+<div id='calendar'></div>
+
+<script type="text/javascript">
+
+
+
+$( document ).ready(function() {
+
+	$("#btnGo").on('click' ,function() {
+		console.log("clicked")
+		$.get( "quote?ticker=SPY", function() {
+
+
+		})
+		.done(function(data) {
+			jdata = JSON.parse(data)
+			console.table(data.SPY)
+		})
+		.fail(function() {
+			alert( "error" );
+		})
+		// .always(function() {
+		// 	alert( "finished" );
+		// });
+
+	})
+
+
+	// $("#btnHistory").on('click' ,function() {
+	// 	console.log("clicked")
+	// 	$.get( "transactionHistory?", function() {
+	//
+	// 	})
+	// 	.done(function(data) {
+	// 		jdata = JSON.parse(data)
+	// 		console.table(jdata)
+	// 	})
+	// 	.fail(function() {
+	// 		alert( "error" );
+	// 	})
+	// 	// .always(function() {
+	// 	// 	alert( "finished" );
+	// 	// });
+	//
+	// })
+
+	$(function() {
+	    var calendarEl = document.getElementById('calendar');
+	    var calendar = new FullCalendar.Calendar(calendarEl, {
+	    	initialView: 'dayGridMonth',
+			height: 700,
+			dateClick: function(info) {
+
+				window.location.href = "/tpl/dayView?date="+ info.dateStr +""
+				// $(document).load();
+			},
+			eventClick: function(info) {
+				alert('Event: ' + info.event.title);
+				alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
+				alert('View: ' + info.view.type);
+
+				// change the border color just for fun
+				// info.el.style.borderColor = 'red';
+			},
+			dayMaxEvents: true, // allow "more" link when too many events
+			eventSources: [
+
+				// JSON feed:
+				//we will most likely have a feed for each type of trade:
+				//This way we can have different colors for day trades vs multi-day trades
+				// {
+				//   url: '/myfeed.php',
+				//   color: 'yellow',   // an option!
+				//   textColor: 'black' // an option!
+				// }
+
+			  // your event source
+				{
+					events: [ // put the array in the `events` property
+					  {
+						title  : 'event1',
+						start  : '2010-01-01'
+					  },
+					  {
+						title  : 'event2',
+						start  : '2021-02-01',
+						end : '2021-02-01'
+					  },
+					  {
+						title  : 'event3',
+						start  : '2010-01-09',
+					  }
+					],
+					color: 'black',     // an option!
+					textColor: 'yellow' // an option!
+				},
+				{
+					events : [
+						{
+							title: 'swing1',
+							start : '2021-02-01',
+							end : '2021-02-03',
+						}
+					],
+					color: 'red'
+				}
+
+			  	// any other event sources...
+
+			]
+	    });
+	    calendar.render();
+	});
+
+
+});
+
+
+
+$(function() {
+	$('input[name="singleDate"]').daterangepicker({
+		singleDatePicker: true,
+		showDropdowns: true,
+		minYear: 1901,
+		maxYear: parseInt(moment().format('YYYY'),10)
+	},
+	// function(start, end, label) {
+	// 	var years = moment().diff(start, 'years');
+	// 	alert("You are " + years + " years old!");
+	// }
+	);
+
+	// var start = moment().subtract(29, 'days');
+	var start = moment().startOf('month');
+    var end = moment().endOf('month');
+
+    function cb(start, end) {
+        $('#reportrange span').html(start.format('MMMM D, YYYY') + ' - ' + end.format('MMMM D, YYYY'));
+    }
+
+    $('#reportrange').daterangepicker({
+        startDate: start,
+        endDate: end,
+		showDropdowns: true,
+        ranges: {
+           'Today': [moment(), moment()],
+           'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+           'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+           'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+           'This Month': [moment().startOf('month'), moment().endOf('month')],
+           'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+        }
+    }, cb);
+
+    cb(start, end);
+});
+
+
+
+
+
+	  // .always(function() {
+	  //   alert( "finished" );
+	  // });
+
+
+</script>
+
+
+{{end}}

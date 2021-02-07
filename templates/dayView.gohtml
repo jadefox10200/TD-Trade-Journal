@@ -1,0 +1,103 @@
+{{define "dayView"}}
+
+<div id="dayBody">
+
+	<div class="ui segment" id="mainContainer">
+		<div class="ui buttons">
+			<button id="btnBack" class="ui labeled icon button"><i class="left chevron icon"></i>Back</button>
+			<button id="btnForward" class="ui right labeled icon button">Forward<i class="right chevron icon"></i></button>
+		</div>
+
+		<div class="ui action input" style="float:right">
+			<input type="text" name="singleDate" id="singleDate" value="" placeholder="Select Date..."/>
+			<div id="btnGoDate" class="ui button">Go</div>
+		</div>
+
+
+		<div class="ui clearing divider"></div>
+
+		<h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2>
+
+		<div>
+			{{if .Loaded}}
+			<li class="title_collection">Total trades:{{ .TradeCount}}</li>
+			<li class="title_collection">Total volume:{{ .SharesTraded}}</li>
+			<li class="title_collection">Closed Gross:{{ .ClosedGross}}</li>
+			<li class="title_collection">Commission/Fees:{{ .TotalFees}}</li>
+			<li class="title_collection">Closed P&L:{{ .FinalPL}}</li>
+			{{else}}
+			<p class="title_collection">No data loaded yet</p>
+			<button class="ui black button" id="btnLoadTrades" >Load Trade Data</button>
+			{{ end }}
+		</div>
+
+
+<!--
+		<div class="ui right internal rail" id="plContainer">
+			<div class="ui segment">
+			DAILY P&L GRAPH
+			</div>
+		</div> -->
+
+		<div class="ui clearing divider"></div>
+
+		<div class="ui segment">
+			daily review content
+		</div>
+
+	</div>
+
+
+</div>
+
+<script>
+
+
+	$( document ).ready(function() {
+
+		$('input[name="singleDate"]').daterangepicker({
+			singleDatePicker: true,
+			showDropdowns: true,
+			minYear: 1901,
+			format: "DD-MM-YYYY",
+			maxYear: parseInt(moment().format('YYYY'),10)
+		},
+		// function(start, end, label) {
+		//
+		// }
+		);
+
+		$("#btnForward").on('click', function() {
+
+			var date = moment($("#dateHeader").attr("date")).add(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		$("#btnBack").on('click', function() {
+			var date = moment($("#dateHeader").attr("date")).subtract(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		$("#btnGoDate").on('click', function() {
+			var date = moment($("#dateHeader").attr("date")).subtract(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		var date = moment($("#dateHeader").attr("date")).format("DD-MM-YYYY")
+		$("#singleDate").val(date)
+
+		$("btnLoadTrades").on('click', function() {
+			var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+			$.ajax({
+			  url: "/loadTradeDate",
+			  data: date
+			  // success: success,
+			  // dataType: dataType
+			});
+		})
+
+	});
+
+</script>
+
+{{end}}

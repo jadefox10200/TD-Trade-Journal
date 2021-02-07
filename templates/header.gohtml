@@ -1,0 +1,29 @@
+{{define "header"}}
+<header>
+    <nav>
+		<ul>
+			<li style="position: absolute; margin-top: -25px;"><img src="/public/img/siteLogo.jpg" width="108px" height="108px"/></li>
+
+			<li style="margin-left: 130px;"><a href="/">Home</a></li>
+
+
+			<li><a href="/tpl/dayView">Day View</a></li>
+			<li><a href="/tpl/monthView">Month View</a></li>
+			<li><a href="/tpl/importTrades">Import Trades</a></li>
+
+			{{if .LoggedIn}}
+			<li><a href="/logout">Log Out</a></li>
+			{{else}}
+			<li><a href="/authenticate">Log In</a></li>
+			{{end}}
+
+
+
+		</ul>
+    </nav>
+</header>
+<script>
+
+</script>
+
+{{end}}
