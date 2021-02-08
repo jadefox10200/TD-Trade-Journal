@@ -310,6 +310,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 		http.Error(w,
 			fmt.Sprintf("Failed to insert transactions: %s.\n", err.Error()),
 			500)
+		return
 	}
 
 	err = json.NewEncoder(w).Encode(transactions)
@@ -317,6 +318,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 		http.Error(w,
 			fmt.Sprintf("Transactions were saved, but not marshalled on return: %s.\n", err.Error()),
 			500)
+		return
 	}
 
 	return
@@ -325,19 +327,10 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 
 func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 
-	sqlStr := "INSERT INTO tradeTransactions( orderId,Type,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
+	sqlStr := "INSERT IGNORE INTO tradeTransactions( orderId,Type,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
 
 	vals := []interface{}{}
-	var counter int
 	for _, row := range *t {
-		var id int64
-		err := db.db.QueryRow("select TransactionId from tradeTransactions where TransactionId = ?", row.TransactionID).Scan(id)
-		//if anything is returned, skip this row as we got a result.
-		if err != sql.ErrNoRows {
-			continue
-		} else if err != nil {
-			return err
-		}
 
 		var fees float64
 		fees += row.Fees.AdditionalFee
@@ -352,11 +345,6 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 		sqlStr += "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),"
 		vals = append(vals, row.OrderID, row.Type, row.ClearingReferenceNumber, row.SubAccount, row.SettlementDate, row.SMA, row.RequirementReallocationAmount, row.DayTradeBuyingPowerEffect, row.NetAmount, row.TransactionDate, row.OrderDate, row.TransactionSubType, row.TransactionID, row.CashBalanceEffectFlag, row.Description, row.ACHStatus, row.AccruedInterest, fees, row.TransactionItem.AccountID, row.TransactionItem.Amount, row.TransactionItem.Price, row.TransactionItem.Cost, row.TransactionItem.ParentOrderKey, row.TransactionItem.ParentChildIndicator, row.TransactionItem.Instruction, row.TransactionItem.PositionEffect, row.TransactionItem.Instrument.Symbol, row.TransactionItem.Instrument.UnderlyingSymbol, row.TransactionItem.Instrument.OptionExpirationDate, row.TransactionItem.Instrument.OptionStrikePrice, row.TransactionItem.Instrument.PutCall, row.TransactionItem.Instrument.CUSIP, row.TransactionItem.Instrument.Description, row.TransactionItem.Instrument.AssetType, row.TransactionItem.Instrument.BondMaturityDate, row.TransactionItem.Instrument.BondInterestRate)
 
-		counter++
-	}
-
-	if counter == 0 {
-		return fmt.Errorf("There were no new rows found to upload")
 	}
 
 	//trim the last,
@@ -379,7 +367,6 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 	num, _ := res.RowsAffected()
 
 	fmt.Println("Result of insert:", num)
-	fmt.Println("Counter should match rows:", counter)
 
 	return nil
 

@@ -87,7 +87,6 @@
 				})
 			})
 			.fail(function(data) {
-				console.log( data.responseText)
 				alert(data.responseText)
 			})
 			.always(function() {
@@ -112,9 +111,9 @@
 			// .done(function() {
 			// 	$("#btnLoadTrades").removeClass("loading")
 			// })
-			// .fail(function() {
-			// 	alert( "error" );
-			// })
+			.fail(function(data) {
+				alert(data.responseText );
+			})
 			.always(function() {
 				$("#btnLoadTrades").removeClass("loading")
 			});
