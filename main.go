@@ -332,7 +332,8 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 	for _, row := range *t {
 		var id int64
 		err := db.db.QueryRow("select TransactionId from tradeTransactions where TransactionId = ?", row.TransactionID).Scan(id)
-		if err == sql.ErrNoRows {
+		//if anything is returned, skip this row as we got a result.
+		if err != sql.ErrNoRows {
 			continue
 		} else if err != nil {
 			return err
