@@ -1,5 +1,4 @@
 ALTER TABLE `TradeJournal`.`TransactionHistoryTable`
-CHANGE COLUMN `orderId` `OrderId` VARCHAR(20) NOT NULL ,
 ADD COLUMN `Type` VARCHAR(20) NULL AFTER `OrderId`,
 ADD COLUMN `ClearingReferenceNumber` VARCHAR(20) NULL AFTER `Type`,
 ADD COLUMN `SubAccount` VARCHAR(5) NULL AFTER `ClearingReferenceNumber`,

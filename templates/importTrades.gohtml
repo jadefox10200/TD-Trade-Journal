@@ -6,9 +6,10 @@
 		<div class="ui action input">
 	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
 	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
+			<button class="ui button" id="btnSaveTrades" >Save Trade Data</button>
 	    </div>
 	</div>
-	<table class="ui fixed single line celled table bottom display" id="transactionTable">
+	<table class="ui fixed single line celled table bottom display sortable" id="transactionTable">
 		<thead>
 			<tr>
 				<th>Symbol</th>
@@ -72,6 +73,27 @@
 		    + '</tr>';
 		}
 
+		$("#btnSaveTrades").on('click', function() {
+			$(this).addClass("loading")
+			var start = $("#dateInput").attr("start")
+			var end = $("#dateInput").attr("end")
+			var url = "/saveTransactions?start=" + start + "&end=" + end;
+			console.log(url)
+			$.getJSON(url, function(dataSet, status){
+				console.log(dataSet)
+				$("#transactionBody").empty()
+				$.each(dataSet, function(){
+					$("#transactionBody").append(rowBuilder(this));
+				})
+			})
+			.fail(function(data) {
+				console.log( data.responseText)
+				alert(data.responseText)
+			})
+			.always(function() {
+				$("#btnSaveTrades").removeClass("loading")
+			});
+		})
 
 		$("#btnLoadTrades").on('click', function() {
 
@@ -82,8 +104,9 @@
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
 				console.log(dataSet)
+				$("#transactionBody").empty()
 				$.each(dataSet, function(){
-				      $('#transactionTable').append(rowBuilder(this));
+				      $('#transactionBody').append(rowBuilder(this));
 				});
 			})
 			// .done(function() {

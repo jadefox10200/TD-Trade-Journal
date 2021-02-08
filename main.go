@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,10 +13,31 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/securecookie"
 	"github.com/joncooperworks/go-tdameritrade"
 	"golang.org/x/oauth2"
 )
+
+type DbDao struct {
+	db *sql.DB
+}
+
+var db DbDao
+
+func (d *DbDao) Init(connstr string) error {
+
+	db, err := sql.Open("mysql", connstr)
+	if err != nil {
+		return err
+	}
+	err = db.Ping()
+	if err != nil {
+		return err
+	}
+	d.db = db
+	return nil
+}
 
 var port = ":8080"
 
@@ -23,6 +45,12 @@ var hashKey = []byte("")
 var blockKey = []byte("")
 
 func main() {
+
+	dbString := "root:10200mille@/TradeJournal"
+	err := db.Init(dbString)
+	if err != nil {
+		log.Fatal("Failed to create db connection:", err.Error())
+	}
 
 	hashKey = securecookie.GenerateRandomKey(32)
 	blockKey = securecookie.GenerateRandomKey(32)
@@ -54,6 +82,7 @@ func main() {
 	http.HandleFunc("/quote", handlers.Quote)
 	http.HandleFunc("/movers", handlers.Movers)
 	http.HandleFunc("/transactionHistory", handlers.TransactionHistory)
+	http.HandleFunc("/saveTransactions", handlers.SaveTransactions)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
 
@@ -239,15 +268,119 @@ func (h *TDHandlers) TransactionHistory(w http.ResponseWriter, req *http.Request
 	}
 
 	return
-	// body, err := json.Marshal(transactions)
-	// if err != nil {
-	// 	w.Write([]byte(err.Error()))
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// 	return
-	// }
-	//
-	// w.Write(body)
-	// w.WriteHeader(resp.StatusCode)
+
+}
+
+func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) {
+
+	ctx := context.Background()
+	client, err := h.authenticator.AuthenticatedClient(ctx, req)
+	if err != nil {
+		//TODO: THIS DOESN'T WORK AND NEEDS TO BE FIXED: !!!!
+		//we assume that if there is an error, we should log back in:
+		redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
+		http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	start, okStart := req.URL.Query()["start"]
+	end, okEnd := req.URL.Query()["end"]
+	if !okStart || !okEnd || start[0] == "" || end[0] == "" {
+		http.Error(w, "Your date provided isn't valid. Must provide start and end date", 400)
+		return
+	}
+
+	opts := &tdameritrade.TransactionHistoryOptions{
+		Type:      "TRADE",
+		StartDate: start[0],
+		EndDate:   end[0],
+	}
+
+	acctID := os.Getenv("TDAMERITRADE_ACCT_ID")
+
+	transactions, _, err := client.TransactionHistory.GetTransactions(ctx, acctID, opts)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetTransactions produced the following error: %s.\n", err.Error()),
+			400)
+	}
+
+	err = db.insertTransactions(transactions)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("Failed to insert transactions: %s.\n", err.Error()),
+			500)
+	}
+
+	err = json.NewEncoder(w).Encode(transactions)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("Transactions were saved, but not marshalled on return: %s.\n", err.Error()),
+			500)
+	}
+
+	return
+
+}
+
+func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
+
+	sqlStr := "INSERT INTO tradeTransactions( orderId,Type,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
+
+	vals := []interface{}{}
+	var counter int
+	for _, row := range *t {
+		var id int64
+		err := db.db.QueryRow("select TransactionId from tradeTransactions where TransactionId = ?", row.TransactionID).Scan(id)
+		if err == sql.ErrNoRows {
+			continue
+		} else if err != nil {
+			return err
+		}
+
+		var fees float64
+		fees += row.Fees.AdditionalFee
+		fees += row.Fees.CdscFee
+		fees += row.Fees.Commission
+		fees += row.Fees.OptRegFee
+		fees += row.Fees.OtherCharges
+		fees += row.Fees.RFee
+		fees += row.Fees.RegFee
+		fees += row.Fees.SecFee
+		//36 columns
+		sqlStr += "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),"
+		vals = append(vals, row.OrderID, row.Type, row.ClearingReferenceNumber, row.SubAccount, row.SettlementDate, row.SMA, row.RequirementReallocationAmount, row.DayTradeBuyingPowerEffect, row.NetAmount, row.TransactionDate, row.OrderDate, row.TransactionSubType, row.TransactionID, row.CashBalanceEffectFlag, row.Description, row.ACHStatus, row.AccruedInterest, fees, row.TransactionItem.AccountID, row.TransactionItem.Amount, row.TransactionItem.Price, row.TransactionItem.Cost, row.TransactionItem.ParentOrderKey, row.TransactionItem.ParentChildIndicator, row.TransactionItem.Instruction, row.TransactionItem.PositionEffect, row.TransactionItem.Instrument.Symbol, row.TransactionItem.Instrument.UnderlyingSymbol, row.TransactionItem.Instrument.OptionExpirationDate, row.TransactionItem.Instrument.OptionStrikePrice, row.TransactionItem.Instrument.PutCall, row.TransactionItem.Instrument.CUSIP, row.TransactionItem.Instrument.Description, row.TransactionItem.Instrument.AssetType, row.TransactionItem.Instrument.BondMaturityDate, row.TransactionItem.Instrument.BondInterestRate)
+
+		counter++
+	}
+
+	if counter == 0 {
+		return fmt.Errorf("There were no new rows found to upload")
+	}
+
+	//trim the last,
+	sqlStr = strings.TrimSuffix(sqlStr, ",")
+
+	//prepare the statement
+	stmt, err := db.db.Prepare(sqlStr)
+	if err != nil {
+		return err
+	}
+
+	defer stmt.Close()
+
+	//format all vals at once
+	res, err := stmt.Exec(vals...)
+	if err != nil {
+		return err
+	}
+
+	num, _ := res.RowsAffected()
+
+	fmt.Println("Result of insert:", num)
+	fmt.Println("Counter should match rows:", counter)
+
+	return nil
 
 }
 
@@ -530,3 +663,17 @@ func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data in
 	return
 
 }
+
+// type TransactionList tdameritrade.Transactions
+//
+// func (t TransactionList) Len() int {
+// 	return len(t)
+// }
+//
+// func (t TransactionList) Less(i, j int) bool {
+// 	return t[i].TransactionDate > t[j].TransactionDate
+// }
+//
+// func (t TransactionList) Swap(i, j int) {
+// 	t[i], t[j] = t[j], t[i]
+// }
