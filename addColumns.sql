@@ -1,4 +1,4 @@
-ALTER TABLE `TradeJournal`.`TransactionHistoryTable`
+ALTER TABLE `TradeJournal`.`tradeTransactions`
 ADD COLUMN `Type` VARCHAR(20) NULL AFTER `OrderId`,
 ADD COLUMN `ClearingReferenceNumber` VARCHAR(20) NULL AFTER `Type`,
 ADD COLUMN `SubAccount` VARCHAR(5) NULL AFTER `ClearingReferenceNumber`,
