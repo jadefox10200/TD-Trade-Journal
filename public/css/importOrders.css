@@ -9,6 +9,11 @@ input {
 
 }
 
+/* #transactionBody {
+	overflow-y: scroll;
+	min-height: 400px;
+} */
+
 .tableFixHead {
 	overflow-y: auto;
 	height: 500px;

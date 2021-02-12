@@ -1,30 +1,31 @@
-{{ define "importTrades" }}
+{{ define "importOrders" }}
 
 
 <div id="mainContainer">
 	<div class="ui top  menu">
 		<div class="ui action input">
 	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
-	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
-			<button class="ui button" id="btnSaveTrades" >Save Trade Data</button>
+	    	<button class="ui button" id="btnLoadOrders" >Load Orders</button>
+			<button class="ui button" id="btnSaveOrders" >Save Orders</button>
 	    </div>
 	</div>
 	<div class="tableFixHead">
-		<table class="ui fixed single line celled table bottom display sortable" id="transactionTable">
+		<table class="ui single line celled table" id="ordersTable">
 			<thead>
 				<tr>
 					<th>Symbol</th>
+					<th>Description</th>
 					<th>Amount</th>
 					<th>Price</th>
 					<th>Cost</th>
-					<th>Description</th>
 					<th>Transaction Date</th>
 				</tr>
 			</thead>
-			<tbody id="transactionBody">
+			<tbody id="ordersBody">
 			</tbody>
 		</table>
 	</div>
+
 </div>
 <script>
 	$( document ).ready(function() {
@@ -54,70 +55,69 @@
 			console.log(data)
 		    return '<tr>'
 		            + '<td width="100">'
-		               + data.transactionItem.instrument.symbol
+		               + data.orderLegCollection[0].instrument.symbol
 		            + '</td>'
 		            + '<td>'
-		                + data.transactionItem.amount
+		                + data.orderLegCollection[0].instruction
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionItem.price
+		                + data.orderActivityCollection[0].executionLegs[0].quantity
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionItem.cost
-		            + '</td>'
-
-					+ '<td>'
-		                + data.transactionItem.instruction
+		                + data.orderActivityCollection[0].executionLegs[0].price
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionDate
+		                + data.orderActivityCollection[0].executionLegs[0].price * data.orderActivityCollection[0].executionLegs[0].quantity
+		            + '</td>'
+					+ '<td>'
+		                + data.closeTime
 		            + '</td>'
 		    + '</tr>';
 		}
 
-		$("#btnSaveTrades").on('click', function() {
+		$("#btnSaveOrders").on('click', function() {
 			$(this).addClass("loading")
 			var start = $("#dateInput").attr("start")
 			var end = $("#dateInput").attr("end")
-			var url = "/saveTransactions?start=" + start + "&end=" + end;
+			var url = "/saveOrders?start=" + start + "&end=" + end;
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
 				console.log(dataSet)
-				$("#transactionBody").empty()
+				$("#ordersBody").empty()
 				$.each(dataSet, function(){
-					$("#transactionBody").append(rowBuilder(this));
+					$("#ordersBody").append(rowBuilder(this));
 				})
 			})
 			.fail(function(data) {
 				alert(data.responseText)
 			})
 			.always(function() {
-				$("#btnSaveTrades").removeClass("loading")
+				$("#btnSaveOrders").removeClass("loading")
 			});
 		})
 
-		$("#btnLoadTrades").on('click', function() {
+		$("#btnLoadOrders").on('click', function() {
 
 			$(this).addClass("loading")
 			var start = $("#dateInput").attr("start")
 			var end = $("#dateInput").attr("end")
-			var url = "/transactionHistory?start=" + start + "&end=" + end;
+			var url = "/getOrders?start=" + start + "&end=" + end;
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
 				console.log(dataSet)
-				$("#transactionBody").empty()
+				$("#ordersBody").empty()
 				$.each(dataSet, function(){
-				      $('#transactionBody').append(rowBuilder(this));
+				      $('#ordersBody').append(rowBuilder(this));
 				});
 			})
 			// .done(function() {
 			// 	$("#btnLoadTrades").removeClass("loading")
 			// })
 			.fail(function(data) {
-				alert(data.responseText);
+				alert(data.responseText );
 			})
 			.always(function() {
-				$("#btnLoadTrades").removeClass("loading")
+				$("#btnLoadOrders").removeClass("loading")
 			});
 		})
 	})

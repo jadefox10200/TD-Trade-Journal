@@ -1,4 +1,4 @@
-{{ define "importTrades" }}
+{{ define "tradeBuilder" }}
 
 
 <div id="mainContainer">
@@ -6,22 +6,23 @@
 		<div class="ui action input">
 	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
 	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
-			<button class="ui button" id="btnSaveTrades" >Save Trade Data</button>
 	    </div>
 	</div>
 	<div class="tableFixHead">
-		<table class="ui fixed single line celled table bottom display sortable" id="transactionTable">
+		<table class="ui single line celled table bottom display sortable" id="tradeTable">
 			<thead>
 				<tr>
 					<th>Symbol</th>
-					<th>Amount</th>
-					<th>Price</th>
-					<th>Cost</th>
-					<th>Description</th>
-					<th>Transaction Date</th>
+					<th>Executions</th>
+					<th>Shares Traded</th>
+					<th>Avg Entry Price</th>
+					<th>Avg Exit Price</th>
+					<th>P&L</th>
+					<th>Percent Gain</th>
+					<th>Exit Date</th>
 				</tr>
 			</thead>
-			<tbody id="transactionBody">
+			<tbody id="tradeBody">
 			</tbody>
 		</table>
 	</div>
@@ -54,23 +55,28 @@
 			console.log(data)
 		    return '<tr>'
 		            + '<td width="100">'
-		               + data.transactionItem.instrument.symbol
-		            + '</td>'
-		            + '<td>'
-		                + data.transactionItem.amount
+		               + data.Symbol
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionItem.price
+		                + data.Executions
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionItem.cost
-		            + '</td>'
-
-					+ '<td>'
-		                + data.transactionItem.instruction
+		                + data.Quantity
 		            + '</td>'
 					+ '<td>'
-		                + data.transactionDate
+		                + data.AvgEntryPrice
+		            + '</td>'
+					+ '<td>'
+		                + data.AvgExitPrice
+		            + '</td>'
+					+ '<td>'
+						+ data.ProfitLoss
+					+ '</td>'
+					+ '<td>'
+		                + data.PercentGain
+		            + '</td>'
+					+ '<td>'
+		                + data.CloseDate
 		            + '</td>'
 		    + '</tr>';
 		}
@@ -79,13 +85,13 @@
 			$(this).addClass("loading")
 			var start = $("#dateInput").attr("start")
 			var end = $("#dateInput").attr("end")
-			var url = "/saveTransactions?start=" + start + "&end=" + end;
+			var url = "/saveTrades?start=" + start + "&end=" + end;
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
 				console.log(dataSet)
-				$("#transactionBody").empty()
+				$("#tradeBody").empty()
 				$.each(dataSet, function(){
-					$("#transactionBody").append(rowBuilder(this));
+					$("#tradeBody").append(rowBuilder(this));
 				})
 			})
 			.fail(function(data) {
@@ -101,14 +107,18 @@
 			$(this).addClass("loading")
 			var start = $("#dateInput").attr("start")
 			var end = $("#dateInput").attr("end")
-			var url = "/transactionHistory?start=" + start + "&end=" + end;
+			var url = "/getTrades?start=" + start + "&end=" + end;
+			var totalPL = 0
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
+				console.log("tried")
 				console.log(dataSet)
-				$("#transactionBody").empty()
+				$("#tradeBody").empty()
 				$.each(dataSet, function(){
-				      $('#transactionBody').append(rowBuilder(this));
+				      $('#tradeBody').append(rowBuilder(this));
+					  totalPL += this.ProfitLoss
 				});
+				console.log("P&L:", totalPL)
 			})
 			// .done(function() {
 			// 	$("#btnLoadTrades").removeClass("loading")

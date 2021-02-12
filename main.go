@@ -15,9 +15,17 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/securecookie"
-	"github.com/joncooperworks/go-tdameritrade"
+	"github.com/jadefox10200/go-tdameritrade"
 	"golang.org/x/oauth2"
 )
+
+//TODO: IMPROVE LOG IN COOKIE STATE
+//TODO: ORDER TRADES INTO TABLE BY DATE
+//TODO: SAVE TRADES IN A TABLE AND FINISH TRADE BUILDER PAGE
+//TODO: BUILD DAILY VIEW PAGE
+//TODO: BUILD MONTHLY VIEW PAGE
+//TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT
+//TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
 
 type DbDao struct {
 	db *sql.DB
@@ -83,6 +91,10 @@ func main() {
 	http.HandleFunc("/movers", handlers.Movers)
 	http.HandleFunc("/transactionHistory", handlers.TransactionHistory)
 	http.HandleFunc("/saveTransactions", handlers.SaveTransactions)
+	http.HandleFunc("/getOrders", handlers.GetOrders)
+	http.HandleFunc("/saveOrders", handlers.SaveOrders)
+	// http.HandleFunc("/saveTrades", handlers.SaveTrades)
+	http.HandleFunc("/getTrades", handlers.GetTrades)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
 
@@ -104,10 +116,6 @@ type HTTPHeaderStore struct {
 const TimeFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
 
 func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter, req *http.Request) error {
-
-	fmt.Println("MyAccess: ", token.AccessToken)
-	fmt.Println("MyRefresh: ", token.RefreshToken)
-	fmt.Println("MyExpiry: ", token.Expiry)
 
 	err := s.SetEncodedCookie(w, "accessToken", token.AccessToken, token.Expiry)
 	if err != nil {
@@ -208,8 +216,7 @@ type TDHandlers struct {
 func (h *TDHandlers) Authenticate(w http.ResponseWriter, req *http.Request) {
 	redirectURL, err := h.authenticator.StartOAuth2Flow(w, req)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -220,8 +227,7 @@ func (h *TDHandlers) Callback(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	_, err := h.authenticator.FinishOAuth2Flow(ctx, w, req)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -234,8 +240,7 @@ func (h *TDHandlers) TransactionHistory(w http.ResponseWriter, req *http.Request
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
 		//we assume that if there is an error, we should log back in:
-		redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
-		http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -276,10 +281,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		//TODO: THIS DOESN'T WORK AND NEEDS TO BE FIXED: !!!!
-		//we assume that if there is an error, we should log back in:
-		redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
-		http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -291,6 +293,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 	}
 
 	opts := &tdameritrade.TransactionHistoryOptions{
+		Type:      "TRADE",
 		StartDate: start[0],
 		EndDate:   end[0],
 	}
@@ -371,12 +374,320 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 
 }
 
+type InstrumentEquity struct {
+	AssetType string
+	Cusip     string
+	Symbol    string
+}
+
+func (db *DbDao) insertOrders(o *tdameritrade.Orders) error {
+	sqlStr := "INSERT IGNORE INTO orderHistory(orderId, symbol, positionEffect, instruction, quantity, price, orderDate, positionStatus) VALUES "
+
+	vals := []interface{}{}
+	for _, row := range *o {
+		//8 columns
+		sqlStr += "(?, ?, ?, ?, ?, ?, ?, ?),"
+		id := row.OrderID
+		iData, err := row.OrderLegCollection[0].Instrument.MarshalJSON()
+		if err != nil {
+			return fmt.Errorf("Couldn't marshalJSON(): %s", err.Error())
+		}
+
+		ie := InstrumentEquity{}
+		err = json.Unmarshal(iData, &ie)
+		if ie.Symbol == "" || err != nil {
+			return fmt.Errorf("Didn't find the symbol field")
+		}
+
+		positionEffect := row.OrderLegCollection[0].PositionEffect
+		instruction := row.OrderLegCollection[0].Instruction
+		quantity := row.OrderActivityCollection[0].ExecutionLegs[0].Quantity
+		price := row.OrderActivityCollection[0].ExecutionLegs[0].Price
+		orderDate := row.OrderActivityCollection[0].ExecutionLegs[0].Time
+
+		vals = append(vals, id, ie.Symbol, positionEffect, instruction, quantity, price, orderDate, "OPEN")
+
+	}
+
+	//trim the last,
+	sqlStr = strings.TrimSuffix(sqlStr, ",")
+
+	//prepare the statement
+	stmt, err := db.db.Prepare(sqlStr)
+	if err != nil {
+		return err
+	}
+
+	defer stmt.Close()
+
+	//format all vals at once
+	res, err := stmt.Exec(vals...)
+	if err != nil {
+		return err
+	}
+
+	num, _ := res.RowsAffected()
+
+	fmt.Println("Result of insert:", num)
+
+	return nil
+}
+
+func (h *TDHandlers) SaveOrders(w http.ResponseWriter, req *http.Request) {
+
+	ctx := context.Background()
+	client, err := h.authenticator.AuthenticatedClient(ctx, req)
+	if err != nil {
+		//we assume that if there is an error, we should log back in:
+		http.Error(w, "Failed to authenticate", 401)
+		return
+	}
+
+	start, okStart := req.URL.Query()["start"]
+	end, okEnd := req.URL.Query()["end"]
+	if !okStart || !okEnd || start[0] == "" || end[0] == "" {
+		http.Error(w, "Your date provided isn't valid. Must provide start and end date", 400)
+		return
+	}
+
+	acctId := os.Getenv("TDAMERITRADE_ACCT_ID")
+
+	opts := &tdameritrade.OrderParams{
+		AccountId: acctId,
+		From:      start[0],
+		To:        end[0],
+		Status:    "FILLED",
+	}
+
+	orders, _, err := client.Account.GetOrdersByQuery(ctx, opts)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	err = db.insertOrders(orders)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("Failed to insert transactions: %s.\n", err.Error()),
+			500)
+		return
+	}
+
+	err = json.NewEncoder(w).Encode(orders)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GerOrders produced the following error during encoding: %s.\n", err.Error()),
+			500)
+		return
+	}
+
+	return
+}
+
+func (h *TDHandlers) GetOrders(w http.ResponseWriter, req *http.Request) {
+	ctx := context.Background()
+	client, err := h.authenticator.AuthenticatedClient(ctx, req)
+	if err != nil {
+		//we assume that if there is an error, we should log back in:
+		http.Error(w, "Failed to authenticate", 401)
+		return
+	}
+
+	start, okStart := req.URL.Query()["start"]
+	end, okEnd := req.URL.Query()["end"]
+	if !okStart || !okEnd || start[0] == "" || end[0] == "" {
+		http.Error(w, "Your date provided isn't valid. Must provide start and end date", 400)
+		return
+	}
+
+	acctId := os.Getenv("TDAMERITRADE_ACCT_ID")
+
+	opts := &tdameritrade.OrderParams{
+		AccountId: acctId,
+		From:      start[0],
+		To:        end[0],
+		Status:    "FILLED",
+	}
+
+	orders, _, err := client.Account.GetOrdersByQuery(ctx, opts)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	err = json.NewEncoder(w).Encode(orders)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetOrders produced the following error during encoding: %s.\n", err.Error()),
+			500)
+		return
+	}
+
+	return
+
+}
+
+type Trade struct {
+	Symbol        string
+	ProfitLoss    float64
+	Quantity      int
+	EntryPrice    float64
+	ExitPrice     float64
+	OpenDate      string
+	CloseDate     string
+	TradeType     string
+	AvgEntryPrice float64
+	AvgExitPrice  float64
+	PercentGain   float64
+	Executions    int
+	TradeStatus   string
+}
+
+type TradeOrder struct {
+	OrderId        string
+	Symbol         string  `sql:"symbol"`
+	Instruction    string  `sql:"instruction"`
+	Quantity       float64 `sql:"amount"`
+	Price          float64 `sql:"price"`
+	OrderDate      string  `sql:"orderDate"`
+	PositionStatus string  `sql:"positionStatus"`
+}
+
+func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
+
+	var queryString string
+	queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
+	rows, err := db.db.Query(queryString)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get rows: %s", err.Error()), 500)
+	}
+
+	defer rows.Close()
+	var currentSymbol string
+	tradeSlice := make([]TradeOrder, 0)
+	tradeRows := make([]Trade, 0)
+	var first = true
+	for rows.Next() {
+		var t = TradeOrder{}
+		err := rows.Scan(&t.OrderId, &t.Symbol, &t.Instruction, &t.Quantity, &t.Price, &t.OrderDate)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan row: %s", err.Error()), 500)
+			return
+		}
+		if first {
+			currentSymbol = t.Symbol
+			first = false
+		}
+		//when the symbol changes, we need to collect all of the data by symbol, so build the rows here:
+		if currentSymbol != t.Symbol {
+			currentSymbol = t.Symbol
+			err := BuildTradeRow(tradeSlice, &tradeRows, 0)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to getTradeRow %s", err.Error()), 500)
+				return
+			}
+			tradeSlice = nil
+		}
+		//empty the tradeSlice so we can build another symbol collection:
+		tradeSlice = append(tradeSlice, t)
+	}
+
+	err = json.NewEncoder(w).Encode(tradeRows)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetTrades produced the following error during encoding: %s.\n", err.Error()),
+			500)
+		return
+	}
+
+	return
+
+}
+
+func BuildTradeRow(ts []TradeOrder, tSlice *[]Trade, pos int) error {
+
+	var tradeRow = Trade{}
+	tradeRow.Symbol = ts[pos].Symbol
+	tradeRow.EntryPrice = ts[pos].Price
+	tradeRow.OpenDate = ts[pos].OrderDate
+
+	switch ts[pos].Instruction {
+	case "BUY":
+		tradeRow.TradeType = "LONG"
+	case "SELL":
+		tradeRow.TradeType = "SHORT"
+	default:
+		return fmt.Errorf("This isn't a buy or sell... symbol:%s orderDate:%s", tradeRow.Symbol, tradeRow.OpenDate)
+	}
+
+	var buyCount int
+	var sellCount int
+	var buyCost float64
+	var sellCost float64
+	for ; pos < len(ts); pos++ {
+		tradeRow.Executions += 1
+		tradeRow.Quantity += int(ts[pos].Quantity)
+		if ts[pos].Instruction == "BUY" {
+			buyCount += int(ts[pos].Quantity)
+			buyCost += (ts[pos].Price * ts[pos].Quantity)
+		} else if ts[pos].Instruction == "SELL" {
+			sellCount += int(ts[pos].Quantity)
+			sellCost += (ts[pos].Price * ts[pos].Quantity)
+		} else {
+			return fmt.Errorf("Didn't find a sell or buy position for order: %v", ts[pos].OrderId)
+		}
+
+		if (tradeRow.TradeType == "LONG" && sellCount >= buyCount) || (tradeRow.TradeType == "SHORT" && buyCount >= sellCount) {
+			//we have the hit the end of the trade. If there is more data in the array, we need to start a new order:
+			tradeRow.TradeStatus = "CLOSED"
+			tradeRow.ExitPrice = ts[pos].Price
+			tradeRow.CloseDate = ts[pos].OrderDate
+			tradeRow.ProfitLoss = sellCost - buyCost
+			if tradeRow.TradeType == "LONG" {
+				tradeRow.AvgEntryPrice = buyCost / float64(buyCount)
+				tradeRow.AvgExitPrice = sellCost / float64(sellCount)
+				tradeRow.PercentGain = ((tradeRow.AvgExitPrice - tradeRow.AvgEntryPrice) / tradeRow.AvgEntryPrice) * 100
+			} else {
+				tradeRow.AvgEntryPrice = sellCost / float64(sellCount)
+				tradeRow.AvgExitPrice = buyCost / float64(buyCount)
+				tradeRow.PercentGain = ((tradeRow.AvgEntryPrice - tradeRow.AvgExitPrice) / tradeRow.AvgEntryPrice) * 100
+			}
+			*tSlice = append(*tSlice, tradeRow)
+			//if this is true, we are done and need to return.
+			if len(ts) <= (pos + 1) {
+				return nil
+			}
+			//if not, it means there is more data so we need to make another call:
+			pos++
+			err := BuildTradeRow(ts, tSlice, pos)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+
+		//check if this is the last element. This can happen if there is an open position that hasn't been closed:
+		//if true, we are at the end and have an open position:``
+		if len(ts) <= pos {
+			tradeRow.TradeStatus = "OPEN"
+			tradeRow.AvgEntryPrice = buyCost / float64(buyCount)
+			*tSlice = append(*tSlice, tradeRow)
+			return nil
+		}
+	}
+
+	//we assume if we get here, we hit the end of the symbol list and this position hasn't been closed:
+	tradeRow.TradeStatus = "OPEN"
+	tradeRow.AvgEntryPrice = buyCost / float64(buyCount)
+	*tSlice = append(*tSlice, tradeRow)
+	return nil
+}
+
 func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -408,19 +719,7 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 
 func (h *TDHandlers) Index(w http.ResponseWriter, req *http.Request) {
 
-	//make sure we are logged in before going to index.html
-	// _, err := h.authenticator.Store.GetToken(req)
-	// if err != nil {
-	// 	fmt.Println("Error: ", err.Error())
-	// 	//reroute to login:
-	// 	redirectURL := fmt.Sprintf("http://localhost%s/authenticate", port)
-	// 	http.Redirect(w, req, redirectURL, http.StatusTemporaryRedirect)
-	// 	return
-	// }
-
 	renderTemplate(w, req, "home", nil)
-
-	// http.ServeFile(w, req, "index.html")
 
 }
 
@@ -428,8 +727,7 @@ func (h *TDHandlers) Movers(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Failed to authenticate", 401)
 		return
 	}
 
@@ -450,6 +748,7 @@ func (h *TDHandlers) Movers(w http.ResponseWriter, req *http.Request) {
 
 }
 
+//NOT USED CURRENTLY:
 type TransactionRow struct {
 	OrderID                       string  `json:"orderId"`
 	Type                          string  `json:"type"`
@@ -489,60 +788,12 @@ type TransactionRow struct {
 	BondInterestRate              float64 `json:"bondInterestRate"`
 }
 
-// func ConstructTransactionRows(tdameritrade.Transactions) float64 {
-// 	var sum float64
-// 	for _, v := range t {
-// 		sum += v
-// 	}
-//
-// 	var t = &TransactionRow{}
-//
-// 	return t
-// }
-//
-// func (h *TDHandlers) LoadTradeData(w http.ResponseWriter, req *http.Request) {
-//
-// 	ctx := context.Background()
-// 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
-// 	if err != nil {
-// 		w.Write([]byte(err.Error()))
-// 		w.WriteHeader(http.StatusInternalServerError)
-// 		return
-// 	}
-//
-// 	opts := &tdameritrade.TransactionHistoryOptions{
-// 		StartDate: "2021-02-01",
-// 		EndDate:   "2021-02-03",
-// 	}
-//
-// 	acctID := os.Getenv("TDAMERITRADE_ACCT_ID")
-//
-// 	transactions, resp, err := client.TransactionHistory.GetTransactions(ctx, acctID, opts)
-//
-// 	uploadTransactionsSQL(transactions)
-//
-// 	body, err := json.Marshal(transactions)
-// 	if err != nil {
-// 		w.Write([]byte(err.Error()))
-// 		w.WriteHeader(http.StatusInternalServerError)
-// 		return
-// 	}
-//
-// 	w.Write(body)
-// 	w.WriteHeader(resp.StatusCode)
-//
-// }
-
 //change this so it is simply a generic template loader:
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
-
-	name := strings.TrimLeft(r.URL.Path, "/tpl/")
-
+	fmt.Println(r.URL.Path)
+	name := strings.TrimPrefix(r.URL.Path, "/tpl/")
+	fmt.Println(name)
 	var tokenState bool
-	// _, err := h.authenticator.Store.GetToken(r)
-	// if err == nil {
-	// 	tokenState = true
-	// }
 
 	ctx := context.Background()
 	_, err := h.authenticator.AuthenticatedClient(ctx, r)
@@ -650,17 +901,3 @@ func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data in
 	return
 
 }
-
-// type TransactionList tdameritrade.Transactions
-//
-// func (t TransactionList) Len() int {
-// 	return len(t)
-// }
-//
-// func (t TransactionList) Less(i, j int) bool {
-// 	return t[i].TransactionDate > t[j].TransactionDate
-// }
-//
-// func (t TransactionList) Swap(i, j int) {
-// 	t[i], t[j] = t[j], t[i]
-// }
