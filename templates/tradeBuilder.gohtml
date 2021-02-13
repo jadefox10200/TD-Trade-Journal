@@ -1,16 +1,16 @@
 {{ define "tradeBuilder" }}
 
 
-<div id="mainContainer">
-	<div class="ui top  menu">
+<!-- <div id="mainContainer"> -->
+	<!-- <div class="ui top  menu">
 		<div class="ui action input">
 	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
 	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
 	    </div>
-	</div>
-	<div class="tableFixHead">
-		<table class="ui single line celled table bottom display sortable" id="tradeTable">
-			<thead>
+	</div> -->
+	<div class="container">
+		<table class="ui single line celled table striped" id="tradeTable">
+			<!-- <thead>
 				<tr>
 					<th>Symbol</th>
 					<th>Executions</th>
@@ -23,112 +23,47 @@
 				</tr>
 			</thead>
 			<tbody id="tradeBody">
-			</tbody>
+			</tbody> -->
 		</table>
 	</div>
-</div>
+<!-- </div> -->
 <script>
 	$( document ).ready(function() {
+		var url = "/getTrades"
+		$.getJSON(url, function(dataSet, status){
+			console.log("tried")
+			console.log(dataSet)
+			$('#tradeTable').DataTable( {
+		        data: dataSet,
+				"order": [[ 7, "desc" ]],
+		        columns: [
+		            { 	title: "Symbol",
+						data: 'Symbol'
+				 	},
+		            { 	title: "Executions",
+						data: 'Executions'
+					},
+		            { title: "Shares Traded" ,
+						data: 'Quantity'
+					},
+		            { title: "Avg Entry Price",
+						data: "AvgEntryPrice"
+					},
+		            { title: "Avg Exit Price",
+						data: 'AvgExitPrice'
+					},
+		            { title: "P&L",
+						data: 'ProfitLoss'
+				 	},
+					{ title: "Percent Gain" ,
+						data: 'PercentGain'
+					},
+					{ title: "Exit Date",
+						data: 'CloseDate'
+				 	}
+		        ]
+		    });
 
-		$("#dateInput").attr("start", moment().format('YYYY-MM-DD'))
-		$("#dateInput").attr("end", moment().format('YYYY-MM-DD'))
-
-		$('input[name="daterange"]').daterangepicker({
-			// opens: 'left',
-			startDate: moment(),
-    		endDate: moment(),
-			ranges: {
-	           'Today': [moment(), moment()],
-	           'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
-	           'Last 7 Days': [moment().subtract(6, 'days'), moment()],
-	           'Last 30 Days': [moment().subtract(29, 'days'), moment()],
-	           'This Month': [moment().startOf('month'), moment().endOf('month')],
-	           'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
-	        }
-		},function(start, end, label) {
-			$("#dateInput").attr("start", start.format('YYYY-MM-DD'))
-			$("#dateInput").attr("end", end.format('YYYY-MM-DD'))
-			console.log("A new date selection was made: " + start.format('YYYY-MM-DD') + ' to ' + end.format('YYYY-MM-DD'));
-		});
-
-		function rowBuilder(data) {
-			console.log(data)
-		    return '<tr>'
-		            + '<td width="100">'
-		               + data.Symbol
-		            + '</td>'
-					+ '<td>'
-		                + data.Executions
-		            + '</td>'
-					+ '<td>'
-		                + data.Quantity
-		            + '</td>'
-					+ '<td>'
-		                + data.AvgEntryPrice
-		            + '</td>'
-					+ '<td>'
-		                + data.AvgExitPrice
-		            + '</td>'
-					+ '<td>'
-						+ data.ProfitLoss
-					+ '</td>'
-					+ '<td>'
-		                + data.PercentGain
-		            + '</td>'
-					+ '<td>'
-		                + data.CloseDate
-		            + '</td>'
-		    + '</tr>';
-		}
-
-		$("#btnSaveTrades").on('click', function() {
-			$(this).addClass("loading")
-			var start = $("#dateInput").attr("start")
-			var end = $("#dateInput").attr("end")
-			var url = "/saveTrades?start=" + start + "&end=" + end;
-			console.log(url)
-			$.getJSON(url, function(dataSet, status){
-				console.log(dataSet)
-				$("#tradeBody").empty()
-				$.each(dataSet, function(){
-					$("#tradeBody").append(rowBuilder(this));
-				})
-			})
-			.fail(function(data) {
-				alert(data.responseText)
-			})
-			.always(function() {
-				$("#btnSaveTrades").removeClass("loading")
-			});
-		})
-
-		$("#btnLoadTrades").on('click', function() {
-
-			$(this).addClass("loading")
-			var start = $("#dateInput").attr("start")
-			var end = $("#dateInput").attr("end")
-			var url = "/getTrades?start=" + start + "&end=" + end;
-			var totalPL = 0
-			console.log(url)
-			$.getJSON(url, function(dataSet, status){
-				console.log("tried")
-				console.log(dataSet)
-				$("#tradeBody").empty()
-				$.each(dataSet, function(){
-				      $('#tradeBody').append(rowBuilder(this));
-					  totalPL += this.ProfitLoss
-				});
-				console.log("P&L:", totalPL)
-			})
-			// .done(function() {
-			// 	$("#btnLoadTrades").removeClass("loading")
-			// })
-			.fail(function(data) {
-				alert(data.responseText);
-			})
-			.always(function() {
-				$("#btnLoadTrades").removeClass("loading")
-			});
 		})
 	})
 </script>

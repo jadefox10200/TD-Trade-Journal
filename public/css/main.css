@@ -12,10 +12,11 @@
 body {
     margin: auto;
 	margin-top: 30px;
-    width: 1500px;;
+    /* width: 1500px;; */
 	font-family: smith, Fallback, sans-serif;
-	min-width: 960px;
+	/* min-width: 960px; */
 }
+
 nav ul, footer ul {
     font-family:'Helvetica', 'Arial', 'Sans-Serif';
     padding: 0px;

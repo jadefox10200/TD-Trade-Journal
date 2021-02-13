@@ -555,41 +555,10 @@ type TradeOrder struct {
 
 func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
-	var queryString string
-	queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
-	rows, err := db.db.Query(queryString)
+	tradeRows, err := CompileTrades()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get rows: %s", err.Error()), 500)
-	}
-
-	defer rows.Close()
-	var currentSymbol string
-	tradeSlice := make([]TradeOrder, 0)
-	tradeRows := make([]Trade, 0)
-	var first = true
-	for rows.Next() {
-		var t = TradeOrder{}
-		err := rows.Scan(&t.OrderId, &t.Symbol, &t.Instruction, &t.Quantity, &t.Price, &t.OrderDate)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to scan row: %s", err.Error()), 500)
-			return
-		}
-		if first {
-			currentSymbol = t.Symbol
-			first = false
-		}
-		//when the symbol changes, we need to collect all of the data by symbol, so build the rows here:
-		if currentSymbol != t.Symbol {
-			currentSymbol = t.Symbol
-			err := BuildTradeRow(tradeSlice, &tradeRows, 0)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to getTradeRow %s", err.Error()), 500)
-				return
-			}
-			tradeSlice = nil
-		}
-		//empty the tradeSlice so we can build another symbol collection:
-		tradeSlice = append(tradeSlice, t)
+		http.Error(w, err.Error(), 500)
+		return
 	}
 
 	err = json.NewEncoder(w).Encode(tradeRows)
@@ -602,6 +571,46 @@ func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
 	return
 
+}
+
+func CompileTrades() ([]Trade, error) {
+
+	var queryString string
+	queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
+	rows, err := db.db.Query(queryString)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get rows: %s", err.Error())
+	}
+
+	defer rows.Close()
+	var currentSymbol string
+	tradeSlice := make([]TradeOrder, 0)
+	tradeRows := make([]Trade, 0)
+	var first = true
+	for rows.Next() {
+		var t = TradeOrder{}
+		err := rows.Scan(&t.OrderId, &t.Symbol, &t.Instruction, &t.Quantity, &t.Price, &t.OrderDate)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to scan row: %s", err.Error())
+		}
+		if first {
+			currentSymbol = t.Symbol
+			first = false
+		}
+		//when the symbol changes, we need to collect all of the data by symbol, so build the rows here:
+		if currentSymbol != t.Symbol {
+			currentSymbol = t.Symbol
+			err := BuildTradeRow(tradeSlice, &tradeRows, 0)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to getTradeRow %s", err.Error())
+			}
+			tradeSlice = nil
+		}
+		//empty the tradeSlice so we can build another symbol collection:
+		tradeSlice = append(tradeSlice, t)
+	}
+
+	return tradeRows, nil
 }
 
 func BuildTradeRow(ts []TradeOrder, tSlice *[]Trade, pos int) error {
@@ -790,9 +799,9 @@ type TransactionRow struct {
 
 //change this so it is simply a generic template loader:
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.Path)
+
 	name := strings.TrimPrefix(r.URL.Path, "/tpl/")
-	fmt.Println(name)
+
 	var tokenState bool
 
 	ctx := context.Background()
