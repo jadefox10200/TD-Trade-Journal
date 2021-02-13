@@ -33,6 +33,7 @@
 		$.getJSON(url, function(dataSet, status){
 			console.log("tried")
 			console.log(dataSet)
+			console.log(toFixedTrunc(5.198795180722881, 2))
 			$('#tradeTable').DataTable( {
 		        data: dataSet,
 				"order": [[ 7, "desc" ]],
@@ -47,16 +48,28 @@
 						data: 'Quantity'
 					},
 		            { title: "Avg Entry Price",
-						data: "AvgEntryPrice"
+						data: "AvgEntryPrice",
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
 					},
 		            { title: "Avg Exit Price",
-						data: 'AvgExitPrice'
+						data: 'AvgExitPrice',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
 					},
 		            { title: "P&L",
-						data: 'ProfitLoss'
+						data: 'ProfitLoss',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
 				 	},
-					{ title: "Percent Gain" ,
-						data: 'PercentGain'
+					{ title: "Percent" ,
+						data: 'PercentGain',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
 					},
 					{ title: "Exit Date",
 						data: 'CloseDate'
@@ -65,6 +78,7 @@
 		    });
 
 		})
+
 	})
 </script>
 

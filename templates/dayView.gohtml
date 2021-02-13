@@ -97,7 +97,7 @@
 			console.log(dataSet)
 			$("#numTradesSpan").html(dataSet.TradeCount)
 			$("#numSharesSpan").html(dataSet.SharesTraded)
-			$("#closedValueSpan").html(dataSet.ClosedGross)
+			$("#closedValueSpan").html(toFixedTrunc(dataSet.ClosedGross, 2))
 			$.each(dataSet.Trades, function(){
 				  $('#tableBody').append(rowBuilder(this));
 			});
