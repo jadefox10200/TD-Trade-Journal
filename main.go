@@ -21,7 +21,6 @@ import (
 )
 
 //TODO: IMPROVE LOG IN COOKIE STATE
-//TODO: BUILD DAILY VIEW PAGE
 //TODO: BUILD MONTHLY VIEW PAGE
 //TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
@@ -94,6 +93,7 @@ func main() {
 	http.HandleFunc("/saveOrders", handlers.SaveOrders)
 	http.HandleFunc("/saveTrades", handlers.SaveTrades)
 	http.HandleFunc("/getTrades", handlers.GetTrades)
+	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
 
@@ -529,6 +529,7 @@ func (h *TDHandlers) GetOrders(w http.ResponseWriter, req *http.Request) {
 }
 
 type Trade struct {
+	ID            int
 	Symbol        string
 	ProfitLoss    float64
 	Quantity      int
@@ -883,6 +884,75 @@ type TransactionRow struct {
 	BondInterestRate              float64 `json:"bondInterestRate"`
 }
 
+func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
+
+	var dateRaw = time.Now().Format("2006-01-02")
+
+	dateInput := r.URL.Query().Get("date")
+
+	//if we got a date from the user so need to parse it and serve that date:
+	parsedDate, err := time.Parse("2006-01-02", dateInput)
+	dateRaw = parsedDate.Format("2006-01-02")
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("Couldn't parse provided date. Must be format YYYY-MM-MM: %s", err.Error()),
+			500,
+		)
+		return
+	}
+
+	var tradeSlice = make([]Trade, 0)
+
+	data := struct {
+		DateRaw      string
+		TradeCount   int
+		SharesTraded int
+		ClosedGross  float64
+		Trades       []Trade
+		// TotalFees    float64
+		// FinalPL      float64
+	}{dateRaw, 0, 0, 0.0, tradeSlice}
+	queryString := fmt.Sprintf("select * from tradeHistory where closeDate LIKE '%s%%';", dateRaw)
+	rows, err := db.db.Query(queryString)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
+		return
+	}
+
+	for rows.Next() {
+		var t = Trade{}
+		err := rows.Scan(&t.ID, &t.Symbol, &t.ProfitLoss, &t.Quantity, &t.EntryPrice, &t.ExitPrice, &t.OpenDate, &t.CloseDate, &t.TradeType, &t.AvgEntryPrice, &t.AvgExitPrice, &t.PercentGain, &t.Executions)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan rows: %s", err.Error()), 500)
+			return
+		}
+
+		closeDate, err := time.Parse("2006-01-02T15:04:05-0700", t.CloseDate)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed parse time: %s", err.Error()), 400)
+			return
+		}
+
+		if closeDate.Format("2006-01-02") == dateRaw {
+			data.TradeCount += 1
+			data.SharesTraded += t.Quantity
+			data.ClosedGross += t.ProfitLoss
+		}
+		data.Trades = append(data.Trades, t)
+	}
+
+	err = json.NewEncoder(w).Encode(data)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetTrades produced the following error during encoding: %s.\n", err.Error()),
+			500)
+		return
+	}
+
+	return
+
+}
+
 //change this so it is simply a generic template loader:
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 
@@ -917,20 +987,14 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 		}
 
 		data := struct {
-			LoggedIn     bool
-			Date         string
-			DateRaw      string
-			TradeCount   int
-			SharesTraded int
-			ClosedGross  float64
-			TotalFees    float64
-			FinalPL      float64
-			Loaded       bool
-		}{tokenState, dateTime, dateRaw, 0, 0, 0.0, 0.0, 0.0, false}
+			LoggedIn bool
+			Date     string
+			DateRaw  string
+		}{tokenState, dateTime, dateRaw}
 
 		renderTemplate(w, r, name, data)
-		return
 
+		return
 	}
 
 	data := struct {

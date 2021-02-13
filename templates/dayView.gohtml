@@ -19,35 +19,30 @@
 		<h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2>
 
 		<div>
-			{{if .Loaded}}
-			<li class="title_collection">Total trades:{{ .TradeCount}}</li>
-			<li class="title_collection">Total volume:{{ .SharesTraded}}</li>
-			<li class="title_collection">Closed Gross:{{ .ClosedGross}}</li>
-			<li class="title_collection">Commission/Fees:{{ .TotalFees}}</li>
-			<li class="title_collection">Closed P&L:{{ .FinalPL}}</li>
-			{{else}}
-			<p class="title_collection">No data loaded yet</p>
-			<button class="ui black button" id="btnLoadTrades" >Load Trade Data</button>
-			{{ end }}
+			<li class="title_collection">Total trades: <span id="numTradesSpan"></span></li>
+			<li class="title_collection">Total volume: <span id="numSharesSpan"></span></li>
+			<li class="title_collection">Closed P&L: <span id="closedValueSpan"></span></li>
 		</div>
-
-
-<!--
-		<div class="ui right internal rail" id="plContainer">
-			<div class="ui segment">
-			DAILY P&L GRAPH
-			</div>
-		</div> -->
 
 		<div class="ui clearing divider"></div>
 
 		<div class="ui segment">
-			daily review content
+			<table class="ui fixed single line celled table bottom display sortable" id="tradeTable">
+				<thead>
+					<tr>
+						<th>Symbol</th>
+						<th>Volume</th>
+						<th>Executions</th>
+						<th>P&L</th>
+						<th>Transaction Date</th>
+					</tr>
+				</thead>
+				<tbody id="tableBody">
+				</tbody>
+			</table>
 		</div>
 
 	</div>
-
-
 </div>
 
 <script>
@@ -95,6 +90,46 @@
 			  // dataType: dataType
 			});
 		})
+
+		var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+		var url = "/getTradesForDayView?date=" + date
+		$.getJSON(url, function(dataSet, status){
+			console.log(dataSet)
+			$("#numTradesSpan").html(dataSet.TradeCount)
+			$("#numSharesSpan").html(dataSet.SharesTraded)
+			$("#closedValueSpan").html(dataSet.ClosedGross)
+			$.each(dataSet.Trades, function(){
+				  $('#tableBody').append(rowBuilder(this));
+			});
+
+		})
+		.fail(function(data) {
+			alert(data.responseText)
+		})
+		.always(function() {
+			$("#btnSaveTrades").removeClass("loading")
+		});
+
+		function rowBuilder(data) {
+			console.log("Data",data)
+			return '<tr>'
+					+ '<td width="100">'
+					   + data.Symbol
+					+ '</td>'
+					+ '<td>'
+						+ data.Quantity
+					+ '</td>'
+					+ '<td>'
+						+ data.Executions
+					+ '</td>'
+					+ '<td>'
+						+ data.ProfitLoss
+					+ '</td>'
+					+ '<td>'
+						+ data.CloseDate
+					+ '</td>'
+			+ '</tr>';
+		}
 
 	});
 
