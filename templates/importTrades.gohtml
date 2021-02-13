@@ -5,8 +5,9 @@
 	<div class="ui top  menu">
 		<div class="ui action input">
 	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
-	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
-			<button class="ui button" id="btnSaveTrades" >Save Trade Data</button>
+	    	<button class="ui button" id="btnLoadTransactions" >Load Transactions</button>
+			<button class="ui button" id="btnSaveTransactions" >Save Transactions</button>
+			<button class="ui button" id="btnSaveTrades" >Save Trades</button>
 	    </div>
 	</div>
 	<div class="tableFixHead">
@@ -77,16 +78,11 @@
 
 		$("#btnSaveTrades").on('click', function() {
 			$(this).addClass("loading")
-			var start = $("#dateInput").attr("start")
-			var end = $("#dateInput").attr("end")
-			var url = "/saveTransactions?start=" + start + "&end=" + end;
+			var url = "/saveTrades?"
 			console.log(url)
 			$.getJSON(url, function(dataSet, status){
 				console.log(dataSet)
-				$("#transactionBody").empty()
-				$.each(dataSet, function(){
-					$("#transactionBody").append(rowBuilder(this));
-				})
+				alert(data.responseText)
 			})
 			.fail(function(data) {
 				alert(data.responseText)
@@ -96,7 +92,24 @@
 			});
 		})
 
-		$("#btnLoadTrades").on('click', function() {
+		$("#btnSaveTransactions").on('click', function() {
+			$(this).addClass("loading")
+			var start = $("#dateInput").attr("start")
+			var end = $("#dateInput").attr("end")
+			var url = "/saveTransactions?start=" + start + "&end=" + end;
+			console.log(url)
+			$.getJSON(url, function(data, status){
+				alert(data.responseText)
+			})
+			.fail(function(data) {
+				alert(data.responseText)
+			})
+			.always(function() {
+				$("#btnSaveTransactions").removeClass("loading")
+			});
+		})
+
+		$("#btnLoadTransactions").on('click', function() {
 
 			$(this).addClass("loading")
 			var start = $("#dateInput").attr("start")
@@ -117,7 +130,7 @@
 				alert(data.responseText);
 			})
 			.always(function() {
-				$("#btnLoadTrades").removeClass("loading")
+				$("#btnLoadTransactions").removeClass("loading")
 			});
 		})
 	})

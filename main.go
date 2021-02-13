@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -20,8 +21,6 @@ import (
 )
 
 //TODO: IMPROVE LOG IN COOKIE STATE
-//TODO: ORDER TRADES INTO TABLE BY DATE
-//TODO: SAVE TRADES IN A TABLE AND FINISH TRADE BUILDER PAGE
 //TODO: BUILD DAILY VIEW PAGE
 //TODO: BUILD MONTHLY VIEW PAGE
 //TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT
@@ -93,7 +92,7 @@ func main() {
 	http.HandleFunc("/saveTransactions", handlers.SaveTransactions)
 	http.HandleFunc("/getOrders", handlers.GetOrders)
 	http.HandleFunc("/saveOrders", handlers.SaveOrders)
-	// http.HandleFunc("/saveTrades", handlers.SaveTrades)
+	http.HandleFunc("/saveTrades", handlers.SaveTrades)
 	http.HandleFunc("/getTrades", handlers.GetTrades)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
@@ -307,7 +306,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 			400)
 	}
 
-	err = db.insertTransactions(transactions)
+	num, err := db.insertTransactions(transactions)
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("Failed to insert transactions: %s.\n", err.Error()),
@@ -315,19 +314,21 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	err = json.NewEncoder(w).Encode(transactions)
-	if err != nil {
-		http.Error(w,
-			fmt.Sprintf("Transactions were saved, but not marshalled on return: %s.\n", err.Error()),
-			500)
-		return
-	}
+	io.WriteString(w, fmt.Sprintf("Inserted %v transactions", num))
+
+	// err = json.NewEncoder(w).Encode(transactions)
+	// if err != nil {
+	// 	http.Error(w,
+	// 		fmt.Sprintf("Transactions were saved, but not marshalled on return: %s.\n", err.Error()),
+	// 		500)
+	// 	return
+	// }
 
 	return
 
 }
 
-func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
+func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) (int64, error) {
 
 	sqlStr := "INSERT IGNORE INTO tradeTransactions( orderId, Type ,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
 
@@ -355,7 +356,7 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 	//prepare the statement
 	stmt, err := db.db.Prepare(sqlStr)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer stmt.Close()
@@ -363,14 +364,14 @@ func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) error {
 	//format all vals at once
 	res, err := stmt.Exec(vals...)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	num, _ := res.RowsAffected()
 
 	fmt.Println("Result of insert:", num)
 
-	return nil
+	return num, nil
 
 }
 
@@ -541,6 +542,7 @@ type Trade struct {
 	PercentGain   float64
 	Executions    int
 	TradeStatus   string
+	OrderIdSlice  []string
 }
 
 type TradeOrder struct {
@@ -555,7 +557,7 @@ type TradeOrder struct {
 
 func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
-	tradeRows, err := CompileTrades()
+	tradeRows, err := CompileTrades(false)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -573,10 +575,93 @@ func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
 }
 
-func CompileTrades() ([]Trade, error) {
+func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
+
+	tx, err := db.db.Begin()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to begin tx: %s", err.Error()), 500)
+		return
+	}
+
+	tradeRows, err := CompileTrades(true)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	insertStr := "INSERT INTO tradeHistory(symbol, profitLoss, quantity, entryPrice, exitPrice, openDate, closeDate, tradeType, avgEntryPrice, avgExitPrice, percentGain, executions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	updateStr := "UPDATE tradeTransactions SET tradeStatus = 'CLOSED' where orderId = ?"
+	var affected int64
+	for k, v := range tradeRows {
+		if v.TradeStatus != "CLOSED" {
+			continue
+		}
+
+		result, err := tx.Exec(insertStr, v.Symbol, v.ProfitLoss, v.Quantity, v.EntryPrice, v.ExitPrice, v.OpenDate, v.CloseDate, v.TradeType, v.AvgEntryPrice, v.AvgExitPrice, v.PercentGain, v.Executions)
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, fmt.Sprintf("Failed to insert a row with symbol: %s|%s|line: %v", v.Symbol, v.OpenDate, k), 500)
+			return
+		}
+		i, err := result.RowsAffected()
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Failed to check rowsaffected somehow", 500)
+			return
+		}
+		affected += i
+		if len(v.OrderIdSlice) < 1 {
+			tx.Rollback()
+			http.Error(w, fmt.Sprintf("Something is wrong. OrderIdSlice is empty for %s|%s", v.Symbol, v.OpenDate), 500)
+			return
+		}
+		for _, j := range v.OrderIdSlice {
+
+			result, err := tx.Exec(updateStr, j)
+			if err != nil {
+				tx.Rollback()
+				http.Error(w, fmt.Sprintf("Failed to update a row with id: %s|%s", j, err.Error()), 500)
+				return
+			}
+			num, err := result.RowsAffected()
+			if err != nil || num != 1 {
+				tx.Rollback()
+				http.Error(w, fmt.Sprintf("Something went wrong with the result id: %s", j), 500)
+			}
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println("Failed to execution tx commit on save trades...")
+		http.Error(w, fmt.Sprintf("Failed to commit on save trades: %s", err.Error()), 500)
+		tx.Rollback()
+		return
+	}
+
+	io.WriteString(w, fmt.Sprintf("Saved %v trades", affected))
+
+	// err = json.NewEncoder(w).Encode(tradeRows)
+	// if err != nil {
+	// 	http.Error(w,
+	// 		fmt.Sprintf("GetTrades produced the following error during encoding: %s.\n", err.Error()),
+	// 		500)
+	// 	return
+	// }
+
+	return
+
+}
+
+//if you want to find only the open trades that haven't been saved, pass true. Otherwise, pass false to get all trades.
+func CompileTrades(save bool) ([]Trade, error) {
 
 	var queryString string
-	queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
+	if save {
+		queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions where tradeStatus = 'OPEN' order by symbol, orderDate ASC;`
+	} else {
+		queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
+	}
 	rows, err := db.db.Query(queryString)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get rows: %s", err.Error())
@@ -634,6 +719,7 @@ func BuildTradeRow(ts []TradeOrder, tSlice *[]Trade, pos int) error {
 	var buyCost float64
 	var sellCost float64
 	for ; pos < len(ts); pos++ {
+		tradeRow.OrderIdSlice = append(tradeRow.OrderIdSlice, ts[pos].OrderId)
 		tradeRow.Executions += 1
 		tradeRow.Quantity += int(ts[pos].Quantity)
 		if ts[pos].Instruction == "BUY" {
