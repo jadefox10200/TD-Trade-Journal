@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,8 +23,11 @@ import (
 )
 
 //TODO: IMPROVE LOG IN COOKIE STATE
-//TODO: BUILD MONTHLY VIEW PAGE
+//TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
+//TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
+
 //TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT
+//TODO: Fix Trade TABLE VIEW SO THAT IT PULLS FROM THE TRADE TABLE AND MAKE EACH ROW CLICKABL
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
 
 type DbDao struct {
@@ -94,6 +99,8 @@ func main() {
 	http.HandleFunc("/saveTrades", handlers.SaveTrades)
 	http.HandleFunc("/getTrades", handlers.GetTrades)
 	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
+
+	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
 
@@ -659,9 +666,9 @@ func CompileTrades(save bool) ([]Trade, error) {
 
 	var queryString string
 	if save {
-		queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions where tradeStatus = 'OPEN' order by symbol, orderDate ASC;`
+		queryString = `select orderId, symbol, instruction, amount, price, transactionDate  from tradeTransactions where tradeStatus = 'OPEN' order by symbol, transactionDate ASC;`
 	} else {
-		queryString = `select orderId, symbol, instruction, amount, price, orderDate  from tradeTransactions order by symbol, orderDate ASC;`
+		queryString = `select orderId, symbol, instruction, amount, price, transactionDate from tradeTransactions order by symbol, transactionDate ASC;`
 	}
 	rows, err := db.db.Query(queryString)
 	if err != nil {
@@ -912,7 +919,7 @@ func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
 		// TotalFees    float64
 		// FinalPL      float64
 	}{dateRaw, 0, 0, 0.0, tradeSlice}
-	queryString := fmt.Sprintf("select * from tradeHistory where closeDate LIKE '%s%%';", dateRaw)
+	queryString := fmt.Sprintf("select * from tradeHistory where closeDate LIKE '%s%%' order by closeDate ASC;", dateRaw)
 	rows, err := db.db.Query(queryString)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
@@ -938,6 +945,8 @@ func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
 			data.SharesTraded += t.Quantity
 			data.ClosedGross += t.ProfitLoss
 		}
+		closeDate = timeToPST(closeDate)
+		t.CloseDate = closeDate.Format(tableTimeFormat)
 		data.Trades = append(data.Trades, t)
 	}
 
@@ -953,17 +962,175 @@ func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
 
 }
 
+type Event struct {
+	Title   string `json:"title"`
+	Date    string `json:"start"`
+	Display string `json:"display"`
+}
+
+func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
+
+	fmt.Println(r.URL.Path)
+
+	name := strings.TrimPrefix(r.URL.Path, "/getEventsByQuery/")
+
+	bs, err := ioutil.ReadFile(fmt.Sprintf("%s.sql", name))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open sql file: %s", err.Error()), 400)
+		return
+	}
+
+	queryString := fmt.Sprintf(string(bs))
+	rows, err := db.db.Query(queryString)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
+		return
+	}
+
+	var events = make([]Event, 0)
+
+	for rows.Next() {
+		var e = Event{}
+		e.Display = "background"
+		err := rows.Scan(&e.Title, &e.Date)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan rows: %s", err.Error()), 500)
+			return
+		}
+
+		events = append(events, e)
+	}
+
+	err = json.NewEncoder(w).Encode(events)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("GetEvents produced the following error during encoding: %s.\n", err.Error()),
+			500)
+		return
+	}
+}
+
+type TradeViewData struct {
+	LoggedIn    bool
+	Symbol      string
+	PercentGain float64
+	DisplayDate string
+	StartDate   string
+	EndDate     string
+	Shares      int
+	ProfitLoss  float64
+	Callback    string
+	Executions  []TradeOrder
+}
+
+func timeToPST(t time.Time) time.Time {
+
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	t = t.In(loc)
+
+	return t
+}
+
+func RenderTradeDetail(w http.ResponseWriter, r *http.Request, tokenState bool) {
+
+	tradeId := r.URL.Query().Get("id")
+	callBackURL := r.URL.Query().Get("callback")
+
+	bs, err := ioutil.ReadFile("sql/getTradeById.sql")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open sql file: %s", err.Error()), 400)
+		return
+	}
+	id, err := strconv.Atoi(tradeId)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to provide an int for the id: %v|%v", tradeId, err.Error()), 400)
+		return
+	}
+	queryString := fmt.Sprintf(string(bs))
+
+	var t = Trade{}
+	err = db.db.QueryRow(queryString, id).Scan(&t.ID, &t.Symbol, &t.OpenDate, &t.CloseDate, &t.ProfitLoss, &t.Quantity, &t.PercentGain)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Couldn't get order for id: %v:%s", tradeId, err.Error()), 400)
+		return
+	}
+
+	bs2, err := ioutil.ReadFile("sql/getTradeTransactions.sql")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open sql file: %s", err.Error()), 400)
+		return
+	}
+
+	queryString = fmt.Sprintf(string(bs2))
+
+	rows, err := db.db.Query(queryString, t.OpenDate, t.CloseDate, t.Symbol)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Couldn't get rows for id: %v:%s", tradeId, err.Error()), 500)
+		return
+	}
+	var tvd = TradeViewData{}
+	tvd.LoggedIn = tokenState
+	tvd.Symbol = t.Symbol
+	closeDate, err := time.Parse("2006-01-02T15:04:05-0700", t.CloseDate)
+	if err != nil {
+		http.Error(w, "Failed to parse date from database", 500)
+		return
+	}
+	closeDate = timeToPST(closeDate)
+	tvd.DisplayDate = closeDate.Format("2 Jan 2006 15:04")
+	tvd.StartDate = t.OpenDate
+	tvd.EndDate = t.CloseDate
+	tvd.Shares = t.Quantity
+	tvd.ProfitLoss = t.ProfitLoss
+	tvd.PercentGain = t.PercentGain
+	tvd.Executions = make([]TradeOrder, 0)
+	tvd.Callback = callBackURL
+
+	defer rows.Close()
+	for rows.Next() {
+		var to = TradeOrder{}
+		err = rows.Scan(&to.OrderDate, &to.Symbol, &to.Instruction, &to.Quantity, &to.Price)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan row: %s", err.Error()), 500)
+			return
+		}
+		tmpTime, err := time.Parse(UTCTimeFormat, to.OrderDate)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse time from UTC %s", err.Error()), 500)
+			return
+		}
+		tmpTime = timeToPST(tmpTime)
+		to.OrderDate = tmpTime.Format(tableTimeFormat)
+		tvd.Executions = append(tvd.Executions, to)
+	}
+	name := "tradeView"
+	renderTemplate(w, r, name, tvd)
+
+	return
+}
+
+const UTCTimeFormat = "2006-01-02T15:04:05-0700"
+const tableTimeFormat = "02-01-2006 15:04:05"
+
 //change this so it is simply a generic template loader:
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimPrefix(r.URL.Path, "/tpl/")
-
+	fmt.Println(name)
 	var tokenState bool
 
 	ctx := context.Background()
 	_, err := h.authenticator.AuthenticatedClient(ctx, r)
 	if err == nil {
 		tokenState = true
+	}
+	if name == "tradeView" {
+		RenderTradeDetail(w, r, tokenState)
+		return
 	}
 
 	if name == "dayView" {
@@ -1034,9 +1201,9 @@ func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data in
 
 	// execute layout
 	type Model struct {
-		Header   template.HTML
-		Body     template.HTML
-		LoggedIn bool
+		Header template.HTML
+		Body   template.HTML
+		// LoggedIn bool
 		PageName template.HTML
 		Footer   template.HTML
 	}

@@ -32,8 +32,8 @@
 					<tr>
 						<th>Symbol</th>
 						<th>Volume</th>
-						<th>Executions</th>
 						<th>P&L</th>
+						<th>Win/Loss %</th>
 						<th>Transaction Date</th>
 					</tr>
 				</thead>
@@ -110,21 +110,25 @@
 			$("#btnSaveTrades").removeClass("loading")
 		});
 
+		var callback = $(location).attr('href');
+
 		function rowBuilder(data) {
 			console.log("Data",data)
 			return '<tr>'
-					+ '<td width="100">'
-					   + data.Symbol
+					+ '<td width="90">'
+						+ '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
+							+ data.Symbol
+						+ '</a>'
 					+ '</td>'
 					+ '<td>'
 						+ data.Quantity
 					+ '</td>'
-					+ '<td>'
-						+ data.Executions
-					+ '</td>'
-					+ '<td>'
+					+ '<td>$'
 						+ data.ProfitLoss
 					+ '</td>'
+					+ '<td>'
+						+ data.PercentGain
+					+ '%</td>'
 					+ '<td>'
 						+ data.CloseDate
 					+ '</td>'

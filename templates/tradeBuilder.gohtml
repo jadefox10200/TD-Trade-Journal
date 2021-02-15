@@ -37,6 +37,12 @@
 			$('#tradeTable').DataTable( {
 		        data: dataSet,
 				"order": [[ 7, "desc" ]],
+				// IDEA: USE THIS TO RENDER THE SYMBOL WITH A LINK. MUST CHANGE THE DATA FIRST SO THE ID CAN BE PASSED:
+				// { data: null, render: function ( data, type, row ) {
+                // return '<a href="user_project_edit.php?project='+data.projects.projectid+'" target="_blank">User Project Edit Page</a>'
+            } }
+
+
 		        columns: [
 		            { 	title: "Symbol",
 						data: 'Symbol'

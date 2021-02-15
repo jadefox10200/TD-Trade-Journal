@@ -28,30 +28,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('calendar');
     var calendar = new FullCalendar.Calendar(calendarEl, {
     	initialView: 'dayGridMonth',
-		height: 700,
-		dateClick: function(info) {
-			alert('Date: ' + info.dateStr);
-			alert('Resource ID: ' + info.resource.id);
-		},
-		eventClick: function(info) {
-			alert('Event: ' + info.event.title);
-			alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
-			alert('View: ' + info.view.type);
+		height: 700
 
 			// change the border color just for fun
 			// info.el.style.borderColor = 'red';
 		},
 		dayMaxEvents: true, // allow "more" link when too many events
 		eventSources: [
-
-			// JSON feed:
-			//we will most likely have a feed for each type of trade:
-			//This way we can have different colors for day trades vs multi-day trades
-			// {
-			//   url: '/myfeed.php',
-			//   color: 'yellow',   // an option!
-			//   textColor: 'black' // an option!
-			// }
 
 		  // your event source
 			{

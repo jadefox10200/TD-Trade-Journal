@@ -4,50 +4,41 @@
 
 <script type="text/javascript">
 
+function getWeekTotals() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getWeekTotals",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
 
+function getRedDays() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getRedDays",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
+
+function getGreenDays() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getGreenDays",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
 
 $( document ).ready(function() {
 
-	$("#btnGo").on('click' ,function() {
-		console.log("clicked")
-		$.get( "quote?ticker=SPY", function() {
 
-
-		})
-		.done(function(data) {
-			jdata = JSON.parse(data)
-			console.table(data.SPY)
-		})
-		.fail(function() {
-			alert( "error" );
-		})
-		// .always(function() {
-		// 	alert( "finished" );
-		// });
-
-	})
-
-
-	// $("#btnHistory").on('click' ,function() {
-	// 	console.log("clicked")
-	// 	$.get( "transactionHistory?", function() {
-	//
-	// 	})
-	// 	.done(function(data) {
-	// 		jdata = JSON.parse(data)
-	// 		console.table(jdata)
-	// 	})
-	// 	.fail(function() {
-	// 		alert( "error" );
-	// 	})
-	// 	// .always(function() {
-	// 	// 	alert( "finished" );
-	// 	// });
-	//
-	// })
-
-	$(function() {
-	    var calendarEl = document.getElementById('calendar');
+	$.when(getGreenDays(), getRedDays(), getWeekTotals()).done(function(greenDays, redDays, weekTotals){
+		console.log(JSON.parse(greenDays[0]))
+		console.log(JSON.parse(redDays[0]))
+		console.log(JSON.parse(weekTotals[0]))
+		var calendarEl = document.getElementById('calendar');
 	    var calendar = new FullCalendar.Calendar(calendarEl, {
 	    	initialView: 'dayGridMonth',
 			height: 700,
@@ -56,64 +47,38 @@ $( document ).ready(function() {
 				window.location.href = "/tpl/dayView?date="+ info.dateStr +""
 				// $(document).load();
 			},
-			eventClick: function(info) {
-				alert('Event: ' + info.event.title);
-				alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
-				alert('View: ' + info.view.type);
+			// eventClick: function(info) {
+			// 	alert('Event: ' + info.event.title);
+			// 	alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
+			// 	alert('View: ' + info.view.type);
 
 				// change the border color just for fun
 				// info.el.style.borderColor = 'red';
-			},
-			dayMaxEvents: true, // allow "more" link when too many events
+			// },
+
 			eventSources: [
-
-				// JSON feed:
-				//we will most likely have a feed for each type of trade:
-				//This way we can have different colors for day trades vs multi-day trades
-				// {
-				//   url: '/myfeed.php',
-				//   color: 'yellow',   // an option!
-				//   textColor: 'black' // an option!
-				// }
-
-			  // your event source
 				{
-					events: [ // put the array in the `events` property
-					  {
-						title  : 'event1',
-						start  : '2010-01-01'
-					  },
-					  {
-						title  : 'event2',
-						start  : '2021-02-01',
-						end : '2021-02-01'
-					  },
-					  {
-						title  : 'event3',
-						start  : '2010-01-09',
-					  }
-					],
-					color: 'black',     // an option!
-					textColor: 'yellow' // an option!
+					events : JSON.parse(redDays[0]),
+					color: '#ff6666'
 				},
 				{
-					events : [
-						{
-							title: 'swing1',
-							start : '2021-02-01',
-							end : '2021-02-03',
-						}
-					],
-					color: 'red'
+					events: JSON.parse(greenDays[0]),
+					color: '#B1FABC'     // an option!
+				},
+				{
+					events : JSON.parse(weekTotals[0]),
+					color: '#6666FF'
 				}
-
-			  	// any other event sources...
 
 			]
 	    });
 	    calendar.render();
-	});
+		//change the event title text:
+		$(".fc-event-title").css("font-weight","Bold")
+		$(".fc-event-title").css("color","black")
+		$(".fc-event-title").css("font-size","1em")
 
+	})
 
 });
 
