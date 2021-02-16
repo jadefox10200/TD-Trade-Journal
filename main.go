@@ -22,7 +22,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-//TODO: IMPROVE LOG IN COOKIE STATE
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 
@@ -123,70 +122,42 @@ const TimeFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
 
 func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter, req *http.Request) error {
 
-	err := s.SetEncodedCookie(w, "accessToken", token.AccessToken, token.Expiry)
+	//USING DB, MAINTAINS LOG IN STATE EVEN DURING SERVER SHUTDOWN.THIS IS IDEAL FOR TESTING WHERE MANY SHUT DOWNS AND BUILDS ARE NEEDED.
+	updateStr := `UPDATE tokenTable SET
+		accessToken = ?,
+		refreshToken = ?,
+		expiry = ?`
+
+	result, err := db.db.Exec(updateStr, token.AccessToken, token.RefreshToken, token.Expiry.Format("2006-01-02 15:04:05.999999999 -0700 MST"))
 	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return err
+		return fmt.Errorf("Failed to set token in DB: %s", err.Error())
 	}
 
-	err = s.SetEncodedCookie(w, "refreshToken", token.RefreshToken, token.Expiry)
+	i, err := result.RowsAffected()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return err
+		return fmt.Errorf("Failed to check result when setting token: %s\n", err.Error())
 	}
+	if i != 1 {
+		return fmt.Errorf("When setting the token in DB, we set a different amount of rows than intended: %v|%s\n", i, err.Error())
+	}
+
+	//IDEA: SETTING TOKEN VIA USE OF THE ENV. THIS MAINTAINS STATE PAST 30 MINUTES. HOWEVER, WHEN SHUTTING DOWN SERVER, IT IS NOT MAINTAINED:
+	// err := os.Setenv("TDAMERITRADE_ACCESS_TOKEN", token.AccessToken)
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// err = os.Setenv("TDAMERITRADE_REFRESH_TOKEN", token.RefreshToken)
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// err = os.Setenv("TDAMERITRADE_TOKEN_EXPIRY", token.Expiry.Format("2006-01-02 15:04:05.999999999 -0700 MST"))
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
-}
-
-func (s *HTTPHeaderStore) SetEncodedCookie(w http.ResponseWriter, cookieName string, value string, expiry time.Time) error {
-
-	encoded, err := s.Cookie.Encode(cookieName, value)
-	if err != nil {
-		return err
-	}
-
-	cookie := &http.Cookie{
-		Name:    cookieName,
-		Value:   encoded,
-		Expires: expiry,
-		// MaxAge: 1800,
-	}
-
-	http.SetCookie(w, cookie)
-
-	return nil
-}
-
-func (s HTTPHeaderStore) GetToken(req *http.Request) (*oauth2.Token, error) {
-	// DO NOT DO THIS IN A PRODUCTION ENVIRONMENT!
-	// This is just an example.
-	// Used signed cookies like those provided by https://github.com/gorilla/securecookie
-
-	refreshToken, err := req.Cookie("refreshToken")
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.Cookie.Decode("refreshToken", refreshToken.Value, &refreshToken.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	accessToken, err := req.Cookie("accessToken")
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.Cookie.Decode("accessToken", accessToken.Value, &accessToken.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	return &oauth2.Token{
-		AccessToken:  accessToken.Value,
-		RefreshToken: refreshToken.Value,
-		Expiry:       accessToken.Expires,
-	}, nil
 }
 
 func (s HTTPHeaderStore) StoreState(state string, w http.ResponseWriter, req *http.Request) error {
@@ -202,6 +173,114 @@ func (s HTTPHeaderStore) StoreState(state string, w http.ResponseWriter, req *ht
 	)
 	return nil
 }
+
+func (s HTTPHeaderStore) GetToken(req *http.Request) (*oauth2.Token, error) {
+
+	//USING DB, MAINTAINS LOG IN STATE EVEN DURING SERVER SHUTDOWN.THIS IS IDEAL FOR TESTING WHERE MANY SHUT DOWNS AND BUILDS ARE NEEDED.
+	queryString := `select * from tokenTable`
+	var accessToken, refreshToken, expiry string
+	err := db.db.QueryRow(queryString).Scan(&accessToken, &refreshToken, &expiry)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get the token from DB: %s\n", err.Error())
+	}
+
+	//IDEA: GETTING TOKEN THROUGH ENV:
+	// accessToken := os.Getenv("TDAMERITRADE_ACCESS_TOKEN")
+	// if accessToken == "" {
+	// 	return nil, fmt.Errorf("AccessToken was empty\n")
+	// }
+	//
+	// refreshToken := os.Getenv("TDAMERITRADE_REFRESH_TOKEN")
+	// if refreshToken == "" {
+	// 	return nil, fmt.Errorf("RefreshToken was empty\n")
+	// }
+	//
+	// expiry := os.Getenv("TDAMERITRADE_TOKEN_EXPIRY")
+	// if expiry == "" {
+	// 	return nil, fmt.Errorf("Expiry was empty\n")
+	// }
+
+	expiryTime, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", expiry)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse expiry time: %s", err.Error())
+	}
+
+	return &oauth2.Token{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		Expiry:       expiryTime,
+	}, nil
+
+}
+
+//encoded cookie:
+// func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter, req *http.Request) error {
+//
+// 	err := s.SetEncodedCookie(w, "accessToken", token.AccessToken, token.Expiry)
+// 	if err != nil {
+// 		http.Error(w, err.Error(), 500)
+// 		return err
+// 	}
+//
+// 	err = s.SetEncodedCookie(w, "refreshToken", token.RefreshToken, token.Expiry)
+// 	if err != nil {
+// 		http.Error(w, err.Error(), 500)
+// 		return err
+// 	}
+//
+// 	return nil
+// }
+//
+// func (s *HTTPHeaderStore) SetEncodedCookie(w http.ResponseWriter, cookieName string, value string, expiry time.Time) error {
+//
+// 	encoded, err := s.Cookie.Encode(cookieName, value)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	cookie := &http.Cookie{
+// 		Name:    cookieName,
+// 		Value:   encoded,
+// 		Expires: expiry,
+// 		// MaxAge: 1800,
+// 	}
+//
+// 	http.SetCookie(w, cookie)
+//
+// 	return nil
+// }
+
+// func (s HTTPHeaderStore) GetToken(req *http.Request) (*oauth2.Token, error) {
+// 	// DO NOT DO THIS IN A PRODUCTION ENVIRONMENT!
+// 	// This is just an example.
+// 	// Used signed cookies like those provided by https://github.com/gorilla/securecookie
+//
+// 	refreshToken, err := req.Cookie("refreshToken")
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	err = s.Cookie.Decode("refreshToken", refreshToken.Value, &refreshToken.Value)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	accessToken, err := req.Cookie("accessToken")
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	err = s.Cookie.Decode("accessToken", accessToken.Value, &accessToken.Value)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	return &oauth2.Token{
+// 		AccessToken:  accessToken.Value,
+// 		RefreshToken: refreshToken.Value,
+// 		Expiry:       accessToken.Expires,
+// 	}, nil
+// }
 
 func (s HTTPHeaderStore) GetState(req *http.Request) (string, error) {
 	// DO NOT DO THIS IN A PRODUCTION ENVIRONMENT!
@@ -222,7 +301,7 @@ type TDHandlers struct {
 func (h *TDHandlers) Authenticate(w http.ResponseWriter, req *http.Request) {
 	redirectURL, err := h.authenticator.StartOAuth2Flow(w, req)
 	if err != nil {
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -230,10 +309,11 @@ func (h *TDHandlers) Authenticate(w http.ResponseWriter, req *http.Request) {
 }
 
 func (h *TDHandlers) Callback(w http.ResponseWriter, req *http.Request) {
+
 	ctx := context.Background()
 	_, err := h.authenticator.FinishOAuth2Flow(ctx, w, req)
 	if err != nil {
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -246,7 +326,7 @@ func (h *TDHandlers) TransactionHistory(w http.ResponseWriter, req *http.Request
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
 		//we assume that if there is an error, we should log back in:
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -287,7 +367,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -447,7 +527,7 @@ func (h *TDHandlers) SaveOrders(w http.ResponseWriter, req *http.Request) {
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
 		//we assume that if there is an error, we should log back in:
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -497,7 +577,7 @@ func (h *TDHandlers) GetOrders(w http.ResponseWriter, req *http.Request) {
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
 		//we assume that if there is an error, we should log back in:
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -790,7 +870,7 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -830,7 +910,7 @@ func (h *TDHandlers) Movers(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	client, err := h.authenticator.AuthenticatedClient(ctx, req)
 	if err != nil {
-		http.Error(w, "Failed to authenticate", 401)
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
 		return
 	}
 
@@ -970,8 +1050,6 @@ type Event struct {
 
 func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
 
-	fmt.Println(r.URL.Path)
-
 	name := strings.TrimPrefix(r.URL.Path, "/getEventsByQuery/")
 
 	bs, err := ioutil.ReadFile(fmt.Sprintf("%s.sql", name))
@@ -1027,6 +1105,7 @@ func timeToPST(t time.Time) time.Time {
 
 	loc, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
+		//TODO: THIS NEEDS TO BE FIXED TO BE AN ACTUAL ERROR!!!
 		fmt.Println(err)
 	}
 
@@ -1066,7 +1145,6 @@ func RenderTradeDetail(w http.ResponseWriter, r *http.Request, tokenState bool) 
 	}
 
 	queryString = fmt.Sprintf(string(bs2))
-
 	rows, err := db.db.Query(queryString, t.OpenDate, t.CloseDate, t.Symbol)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Couldn't get rows for id: %v:%s", tradeId, err.Error()), 500)
@@ -1120,7 +1198,7 @@ const tableTimeFormat = "02-01-2006 15:04:05"
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimPrefix(r.URL.Path, "/tpl/")
-	fmt.Println(name)
+
 	var tokenState bool
 
 	ctx := context.Background()
