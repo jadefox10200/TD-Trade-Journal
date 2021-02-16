@@ -11,9 +11,10 @@
     var margin = {top: 20, right: 20, bottom: 30, left: 50},
             width = 960 - margin.left - margin.right,
             height = 500 - margin.top - margin.bottom;
-
+	// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
 	var dateFormat = d3.timeFormat("%d-%b-%y"),
-        parseDate = d3.timeParse("%d-%b-%y"),
+		parseDate = d3.timeParse("%d-%b-%y %H:%M"),
+        // parseDate = d3.timeParse("%d-%b-%y"),
         valueFormat = d3.format(',.2f');
 
     var x = techan.scale.financetime()
@@ -100,6 +101,8 @@
 
         data = data.slice(0, 200).map(function(d) {
             return {
+				// moment.unix(yourUnixEpochTime).format('dddd, MMMM Do, YYYY h:mm:ss A')
+
                 date: parseDate(d.Date),
                 open: +d.Open,
                 high: +d.High,

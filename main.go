@@ -12,11 +12,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gocarina/gocsv"
 	"github.com/gorilla/securecookie"
 	"github.com/jadefox10200/go-tdameritrade"
 	"golang.org/x/oauth2"
@@ -25,7 +27,8 @@ import (
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 
-//TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT
+//TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT!!!!
+
 //TODO: Fix Trade TABLE VIEW SO THAT IT PULLS FROM THE TRADE TABLE AND MAKE EACH ROW CLICKABL
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
 
@@ -100,6 +103,7 @@ func main() {
 	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
 
 	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
+	http.HandleFunc("/downloadCharts", handlers.DownloadCharts)
 
 	http.HandleFunc("/tpl/", handlers.Templates)
 
@@ -108,10 +112,137 @@ func main() {
 
 	//SERVE THE PUBLIC FOLDER
 	http.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir("public/"))))
+	http.Handle("/charts/", http.StripPrefix("/charts", http.FileServer(http.Dir("charts/"))))
 
 	http.HandleFunc("/", handlers.Index)
 
 	log.Fatal(http.ListenAndServe(port, nil))
+}
+
+func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
+
+	ctx := context.Background()
+	client, err := h.authenticator.AuthenticatedClient(ctx, r)
+	if err != nil {
+		//we assume that if there is an error, we should log back in:
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
+		return
+	}
+
+	symbol := r.URL.Query().Get("symbol")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	id := r.URL.Query().Get("id")
+
+	fmt.Println(startDate)
+
+	if symbol == "" || startDate == "" || endDate == "" {
+		http.Error(w, fmt.Sprintf("Failed to get params correctly: %s", r.URL.String()), 500)
+		return
+	}
+
+	// const UTCTimeFormat = "2006-01-02T15:04:05-0700"
+	timeStart, err := time.Parse(UTCTimeFormat, startDate)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse startDate: %s", err.Error()), 500)
+		return
+	}
+	timeEnd, err := time.Parse(UTCTimeFormat, endDate)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse endDate: %s", err.Error()), 500)
+		return
+	}
+
+	//do a time check to see if the start and end are the same days:
+	roundedStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 0, 0, 0, 0, timeStart.Location())
+	roundedEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 0, 0, 0, 0, timeEnd.Location())
+	if !roundedStart.Equal(roundedEnd) {
+		//TODO: DO SOMETHING TO PULL MULTIPLE CHARTS FOR THE START AND END
+		http.Error(w, "We go two dates and aren't read for that. Try again", 400)
+		return
+	} else {
+		//here the start and end date for the trade are the same:
+		roundedStart = time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), timeStart.Hour()-2, 0, 0, 0, timeEnd.Location())
+		roundedEnd = time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), timeEnd.Hour()+2, 0, 0, 0, timeEnd.Location())
+		//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
+		//IDEA: TD AMERITRADE WILL PROVIDE A MINIMUM OF 1 FULL DAY. THEREFORE, WE CAN OMIT ROUNDING TIME AS IT WON'T GIVE US PART OF A DAY. WE WILL NEED TO PARSE THAT DATA OUT OURSELVES IF WE ONLY WANT TO SHOW A PIECE OF THE DAY.
+		var exhours = false
+		opts := tdameritrade.PriceHistoryOptions{
+			PeriodType:            "day",
+			FrequencyType:         "minute",
+			Frequency:             1,
+			NeedExtendedHoursData: &exhours,
+			StartDate:             tdameritrade.ConvertToEpoch(roundedStart),
+			EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
+		}
+
+		ph, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &opts)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+			return
+		}
+
+		//TODO: CHANGE THIS TO DOWNLOAD INTO CSV: WE WANT TO STORE THE CHART DATA SO WE DON'T HAVE TO LOAD IT EVERY TIME NEWLY. GOOD IDEA / BAD IDEA ???
+		fmt.Println("Save with this id", id)
+
+		err = SaveCandlesToCSV(ph, id, "intraDay")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+			return
+		}
+
+		err = json.NewEncoder(w).Encode(ph)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to encode price history: %s\n", err.Error()), 500)
+			return
+		}
+
+	}
+
+	return
+}
+
+func ensureDir(fileName string) error {
+	dirName := filepath.Dir(fileName)
+	if _, serr := os.Stat(dirName); serr != nil {
+		merr := os.MkdirAll(dirName, os.ModePerm)
+		if merr != nil {
+			return merr
+		}
+	}
+	return nil
+}
+
+// func ensureDir(dirName string) error {
+//
+// 	err := os.MkdirAll(dirName, os.ModeDir)
+//
+// 	if err == nil || os.IsExist(err) {
+// 		return nil
+// 	} else {
+// 		return err
+// 	}
+// }
+
+func SaveCandlesToCSV(ph *tdameritrade.PriceHistory, id string, timeFrame string) error {
+	filename := fmt.Sprintf("charts/%s/%s/%s.csv", ph.Symbol, id, timeFrame)
+
+	err := ensureDir(filename)
+	if err != nil {
+		return fmt.Errorf("Failed to creaet directories for file: %s\n", err.Error())
+	}
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("Failed to create file: %s|%s", filename, err.Error())
+	}
+
+	err = gocsv.MarshalFile(ph.Candles, f)
+	if err != nil {
+		return fmt.Errorf("Failed to marshal the file: %s\n", err.Error())
+	}
+
+	return nil
 }
 
 type HTTPHeaderStore struct {
@@ -645,10 +776,25 @@ type TradeOrder struct {
 
 func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
-	tradeRows, err := CompileTrades(false)
+	queryString := "select * from tradeHistory"
+
+	rows, err := db.db.Query(queryString)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, fmt.Sprintf("Failed to get trades: %s\n", err.Error()), 500)
 		return
+	}
+
+	defer rows.Close()
+	var tradeRows = make([]Trade, 0)
+	for rows.Next() {
+		var t = Trade{}
+		err = rows.Scan(&t.ID, &t.Symbol, &t.ProfitLoss, &t.Quantity, &t.EntryPrice, &t.ExitPrice, &t.OpenDate, &t.CloseDate, &t.TradeType, &t.AvgEntryPrice, &t.AvgExitPrice, &t.PercentGain, &t.Executions)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan row: %s\n", err.Error()), 500)
+			return
+		}
+
+		tradeRows = append(tradeRows, t)
 	}
 
 	err = json.NewEncoder(w).Encode(tradeRows)
@@ -1089,6 +1235,7 @@ func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 type TradeViewData struct {
+	ID          int
 	LoggedIn    bool
 	Symbol      string
 	PercentGain float64
@@ -1159,6 +1306,7 @@ func RenderTradeDetail(w http.ResponseWriter, r *http.Request, tokenState bool) 
 		return
 	}
 	closeDate = timeToPST(closeDate)
+	tvd.ID = t.ID
 	tvd.DisplayDate = closeDate.Format("2 Jan 2006 15:04")
 	tvd.StartDate = t.OpenDate
 	tvd.EndDate = t.CloseDate

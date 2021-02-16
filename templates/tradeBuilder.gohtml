@@ -30,22 +30,24 @@
 <script>
 	$( document ).ready(function() {
 		var url = "/getTrades"
+		var callback = $(location).attr('href');
 		$.getJSON(url, function(dataSet, status){
-			console.log("tried")
+			// console.log("tried")
 			console.log(dataSet)
-			console.log(toFixedTrunc(5.198795180722881, 2))
+			// console.log(toFixedTrunc(5.198795180722881, 2))
 			$('#tradeTable').DataTable( {
 		        data: dataSet,
 				"order": [[ 7, "desc" ]],
 				// IDEA: USE THIS TO RENDER THE SYMBOL WITH A LINK. MUST CHANGE THE DATA FIRST SO THE ID CAN BE PASSED:
 				// { data: null, render: function ( data, type, row ) {
                 // return '<a href="user_project_edit.php?project='+data.projects.projectid+'" target="_blank">User Project Edit Page</a>'
-            } }
-
 
 		        columns: [
 		            { 	title: "Symbol",
-						data: 'Symbol'
+						data: null,
+						render: function(data, type, row){
+							return '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'+ data.Symbol + '</a>'
+						}
 				 	},
 		            { 	title: "Executions",
 						data: 'Executions'
