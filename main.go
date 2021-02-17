@@ -153,50 +153,94 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//do a time check to see if the start and end are the same days:
-	roundedStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 0, 0, 0, 0, timeStart.Location())
-	roundedEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 0, 0, 0, 0, timeEnd.Location())
-	if !roundedStart.Equal(roundedEnd) {
-		//TODO: DO SOMETHING TO PULL MULTIPLE CHARTS FOR THE START AND END
-		http.Error(w, "We go two dates and aren't read for that. Try again", 400)
+	marketOpenTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 6, 30, 0, 0, timeEnd.Location())
+	marketCloseTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 13, 0, 0, 0, timeEnd.Location())
+
+	//time is in UTC... annoying but that's how we get the data from TD AMERITRADE and so it is used as the stable dataum
+	marketOpenTimeEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 14, 30, 0, 0, timeEnd.Location())
+	marketCloseTimeEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 21, 0, 0, 0, timeEnd.Location())
+
+	//IDEA: TD AMERITRADE WILL PROVIDE A MINIMUM OF 1 FULL DAY. THEREFORE, WE CAN OMIT ROUNDING TIME AS IT WON'T GIVE US PART OF A DAY. WE WILL NEED TO PARSE THAT DATA OUT OURSELVES IF WE ONLY WANT TO SHOW A PIECE OF THE DAY.
+	var exhours = false
+
+	//TODO:
+	//we in theory shouldcheck to make sure our trade is within the correct date frame. However, this would only
+	//cause an issue if we were pulling really old data.
+	optsD := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "year",
+		FrequencyType:         "daily",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		// StartDate:             tdameritrade.ConvertToEpoch(roundedStart),
+		// EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
+	}
+	//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
+	fmt.Println(timeStart.Before(marketOpenTimeStart))
+	fmt.Println(timeStart.String())
+	fmt.Println(marketOpenTimeStart.String())
+	if timeStart.Before(marketOpenTimeStart) || timeStart.After(marketCloseTimeStart) {
+		exhours = true
+	}
+	optsE := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "day",
+		FrequencyType:         "minute",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		StartDate:             tdameritrade.ConvertToEpoch(timeStart),
+		EndDate:               tdameritrade.ConvertToEpoch(timeStart),
+	}
+
+	exhours = false
+	if timeEnd.Before(marketOpenTimeEnd) || timeEnd.After(marketCloseTimeEnd) {
+		exhours = true
+	}
+
+	optsX := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "day",
+		FrequencyType:         "minute",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		StartDate:             tdameritrade.ConvertToEpoch(timeEnd),
+		EndDate:               tdameritrade.ConvertToEpoch(timeEnd),
+	}
+
+	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
 		return
-	} else {
-		//here the start and end date for the trade are the same:
-		roundedStart = time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), timeStart.Hour()-2, 0, 0, 0, timeEnd.Location())
-		roundedEnd = time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), timeEnd.Hour()+2, 0, 0, 0, timeEnd.Location())
-		//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
-		//IDEA: TD AMERITRADE WILL PROVIDE A MINIMUM OF 1 FULL DAY. THEREFORE, WE CAN OMIT ROUNDING TIME AS IT WON'T GIVE US PART OF A DAY. WE WILL NEED TO PARSE THAT DATA OUT OURSELVES IF WE ONLY WANT TO SHOW A PIECE OF THE DAY.
-		var exhours = false
-		opts := tdameritrade.PriceHistoryOptions{
-			PeriodType:            "day",
-			FrequencyType:         "minute",
-			Frequency:             1,
-			NeedExtendedHoursData: &exhours,
-			StartDate:             tdameritrade.ConvertToEpoch(roundedStart),
-			EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
-		}
+	}
 
-		ph, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &opts)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
-			return
-		}
+	phX, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsX)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+		return
+	}
 
-		//TODO: CHANGE THIS TO DOWNLOAD INTO CSV: WE WANT TO STORE THE CHART DATA SO WE DON'T HAVE TO LOAD IT EVERY TIME NEWLY. GOOD IDEA / BAD IDEA ???
-		fmt.Println("Save with this id", id)
+	phD, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsD)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+		return
+	}
 
-		err = SaveCandlesToCSV(ph, id, "intraDay")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
-			return
-		}
+	//TODO: CHANGE THIS TO DOWNLOAD INTO CSV: WE WANT TO STORE THE CHART DATA SO WE DON'T HAVE TO LOAD IT EVERY TIME NEWLY. GOOD IDEA / BAD IDEA ???
+	fmt.Println("Save with this id", id)
 
-		err = json.NewEncoder(w).Encode(ph)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to encode price history: %s\n", err.Error()), 500)
-			return
-		}
+	err = SaveCandlesToCSV(phX, id, "exit")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+		return
+	}
 
+	err = SaveCandlesToCSV(phE, id, "entry")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+		return
+	}
+
+	err = SaveCandlesToCSV(phD, id, "day")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+		return
 	}
 
 	return

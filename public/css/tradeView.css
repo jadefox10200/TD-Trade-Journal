@@ -8,112 +8,127 @@
 	font-size: 14px;
 }
 
-
-
-/* chart css: */
 #chart {
-	font: 10px sans-serif;
-}
-.center {
 	text-align: center;
 }
 
-text {
-	fill: #000;
-}
+/* chart css: */
+#chart {
+        font: 10px sans-serif;
+    }
 
-/* button {
-	position: absolute;
-	right: 20px;
-	top: 440px;
-	display: none;
-} */
+    .axis text {
+        font-size: 6px;
+    }
 
-path.candle {
-	stroke: #000000;
-}
+    text.symbol {
+        fill: #BBBBBB;
+    }
 
-path.candle.body {
-	stroke-width: 0;
-}
+    path.candle {
+        stroke: #000000;
+    }
 
-path.candle.up {
-	fill: #00AA00;
-	stroke: #00AA00;
-}
+    path.candle.body {
+        stroke-width: 0;
+    }
 
-path.candle.down {
-	fill: #FF0000;
-	stroke: #FF0000;
-}
+    path.candle.up {
+        fill: #00AA00;
+        stroke: #00AA00;
+    }
 
-/* trade arrows: */
-.tradearrow {
-	z-index: -1;
-}
+    path.candle.down {
+        fill: #FF0000;
+        stroke: #FF0000;
+    }
 
-.data {
-	z-index: -1;
-}
+    path.volume {
+        fill: #DDDDDD;
+    }
 
-path.tradearrow {
-	stroke: none;
-}
+    rect.pane {
+        cursor: move;
+        fill: none;
+        pointer-events: all;
+    }
 
-path.tradearrow.BUY {
-	fill: #0000FF;
-}
+    .indicator path.line {
+        fill: none;
+        stroke-width: 1;
+    }
 
-path.tradearrow.buy-pending {
-	fill-opacity: 0.2;
-	stroke: #0000FF;
-	stroke-width: 1.5;
-}
+	/* trade arrows: */
+	.tradearrow {
+		z-index: -1;
+	}
 
-path.tradearrow.SELL {
-	fill: #9900FF;
-}
+	.data {
+		z-index: -1;
+	}
 
-.tradearrow path.highlight {
-	fill: none;
-	stroke-width: 2;
-}
+	path.tradearrow {
+		stroke: none;
+	}
 
-.tradearrow path.highlight.BUY,.tradearrow path.highlight.buy-pending {
-	stroke: #0000FF;
-}
+	path.tradearrow.BUY {
+		fill: #0000FF;
+	}
 
-.tradearrow path.highlight.buy-pending {
-	fill: #0000FF;
-	fill-opacity: 0.3;
-}
+	path.tradearrow.buy-pending {
+		fill-opacity: 0.2;
+		stroke: #0000FF;
+		stroke-width: 1.5;
+	}
 
-.tradearrow path.highlight.SELL {
-	stroke: #9900FF;
-}
+	path.tradearrow.SELL {
+		fill: #9900FF;
+	}
 
-/* cross hair */
-.y.annotation.left path {
-	fill: #00AA00;
-}
+	.tradearrow path.highlight {
+		fill: none;
+		stroke-width: 2;
+	}
 
-.y.annotation.right path {
-	fill: #FF0000;
-}
+	.tradearrow path.highlight.BUY,.tradearrow path.highlight.buy-pending {
+		stroke: #0000FF;
+	}
 
-.x.annotation path {
-	fill: #DDD80E;
-}
+	.tradearrow path.highlight.buy-pending {
+		fill: #0000FF;
+		fill-opacity: 0.3;
+	}
 
-.crosshair {
-	cursor: crosshair;
-}
+	.tradearrow path.highlight.SELL {
+		stroke: #9900FF;
+	}
 
-.crosshair path.wire {
-	stroke: #DDDDDD;
-	stroke-dasharray: 1, 1;
-}
+	/* cross hair */
+	.y.annotation.left.BUY path {
+		fill: #00AA00;
+	}
 
-.crosshair .axisannotation path {
-	fill: #DDDDDD;
-}
+	.y.annotation.left.SELL path {
+		fill: #FF0000;
+	}
+
+	.y.annotation.right path {
+		fill: #FF0000;
+	}
+
+	.x.annotation path {
+		fill: #DDD80E;
+	}
+
+	.crosshair {
+		cursor: crosshair;
+	}
+
+	.crosshair path.wire {
+		stroke: #DDDDDD;
+		stroke-dasharray: 1, 1;
+	}
+
+	.crosshair .axisannotation path {
+		fill: #DDDDDD;
+	}
