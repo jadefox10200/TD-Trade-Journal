@@ -242,12 +242,35 @@
 				 yPercent.domain(techan.scale.plot.percent(y, accessor(data[indicatorPreRoll])).domain());
 				 yVolume.domain(techan.scale.plot.volume(data, accessor.v).domain());
 
-				var trades = [
-					{{range .Executions}}
+				// check if these trades are for this day:
+				var check = false
 
-						{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
-					{{end}}
-				]
+
+				var chartStart = moment(data[0].date)
+				var chartEnd = moment(data[data.length -1 ].date)
+
+
+				var trades = []
+				{{range .Executions}}
+					var orderDate = moment({{ .OrderDate}}, "DD-MM-YYYY hh:mm:ss")
+					if ( (orderDate.isAfter(chartStart) && orderDate.isBefore(chartEnd))  || (orderDate.isSame(chartStart)) || (orderDate.isSame(chartEnd)) ) {
+						var item = {
+							date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')),
+							type: {{.Instruction}},
+							price: {{.Price}},
+							quantity: {{.Quantity}}
+						}
+						trades.push(item)
+					}
+				{{end}}
+
+				//
+				// var trades = [
+				// 	{{range .Executions}}
+				//
+				// 		{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
+				// 	{{end}}
+				// ]
 
 				 svg.select("g.candlestick").datum(data).call(candlestick);
 				 svg.select("g.volume").datum(data).call(volume);
