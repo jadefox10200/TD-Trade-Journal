@@ -30,7 +30,6 @@ import (
 //BUG: NOT PULLING EXTENDED HOURS WHEN WE SHOULD... SOMETHING IS WRONG WITH OUT TIME CHECKING.
 
 //TODO: MAKE IT SO THAT WHEN A TRADE IS LOADED, THE CHARTS ARE LOADED AT THAT TIME.
-//BUG: WON'T PULL CHART DATA FOR 14 DECEMBER... DON'T UNDERSTAND WHY THIS IS BECAUSE IT WON'T WORK WITH THE API DIRECTLY EITHER.
 
 //BUG: WHEN IT IS A SWING TRADE, ONLY SHOW THE ENTRY ARROW ON THE ENTRY GRAPH AND ONLY THE EXIT ARROW ON THE EXIT GRAPH...
 
@@ -202,10 +201,15 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		EndDate:               tdameritrade.ConvertToEpoch(entryDayEnd),
 	}
 
-	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
-		return
+	phE, _, _ := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
+	if err == nil {
+		// 	http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+		// 	return
+		err = SaveCandlesToCSV(phE, id, "entry")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+			return
+		}
 	}
 
 	exhours = false
@@ -225,9 +229,15 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	phX, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsX)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
-		return
+	if err == nil {
+		// http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+		// return
+		err = SaveCandlesToCSV(phX, id, "exit")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
+			return
+		}
+
 	}
 
 	phD, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsD)
@@ -238,18 +248,6 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 
 	//TODO: CHANGE THIS TO DOWNLOAD INTO CSV: WE WANT TO STORE THE CHART DATA SO WE DON'T HAVE TO LOAD IT EVERY TIME NEWLY. GOOD IDEA / BAD IDEA ???
 	fmt.Println("Save with this id", id)
-
-	err = SaveCandlesToCSV(phX, id, "exit")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
-		return
-	}
-
-	err = SaveCandlesToCSV(phE, id, "entry")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to save csv: %s\n", err.Error()), 500)
-		return
-	}
 
 	err = SaveCandlesToCSV(phD, id, "day")
 	if err != nil {
