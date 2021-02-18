@@ -7,7 +7,6 @@
 
 		<h2 class="ui right left" id="symbolHeader">{{ .Symbol}}</h2>
 		<h3 class="ui right left" id="dateHeader">{{ .DisplayDate}}</h3>
-		<button class="ui button" id="download">Download Chart</button>
 
 		<div>
 			<li class="title_collection">Total volume: <span id="numSharesSpan">{{ .Shares}}</span></li>
@@ -38,7 +37,19 @@
 			</table>
 		</div>
 
-		<div id="chart"></div>
+		<div id="intraDayCharts" class="chart"></div>
+		<div class="ui clearing divider"></div>
+
+		<div>
+			<button class="ui black basic button" id="download" style="float: left;">Update Chart Data</button>
+			<select class="ui simple droodown menu" style="float: right;">
+				<option value="4" class="item" selected>3 Months</option>
+				<option value="2" class="item">6 Months</option>
+		    	<option value="1" class="item">1 Year</option>
+		    </select>
+		</div>
+
+		<div id="dailyChart" class="chart"></div>
 
 	</div>
 
@@ -52,24 +63,34 @@
 
 		// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
 
+		$("select").change(function () {
+		    var str = "";
+		    $( "select option:selected" ).each(function() {
+				$("#dailyChart").html("")
+				var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
+				dailyChart($(this).text(), dailyPath, $(this).val())
+		    });
+	  	})
+
 		$("#download").on('click', function(){
 			var urlString = "/downloadCharts?"
 			urlString += "symbol=" + {{ .Symbol}} + "&"
 			urlString += "startDate=" + encodeURIComponent({{ .StartDate}}) + "&"
 			urlString += "endDate=" + encodeURIComponent({{ .EndDate}}) + "&"
 			urlString += "id=" + {{ .ID}}
-
+			$(this).addClass("loading")
 			$.ajax({
 				url: urlString
 			})
 			.done(function(data) {
-				console.log(data)
+				// console.log(data)
 			})
 			.fail(function(data) {
 				alert(data.responseText);
 			})
 			.always(function() {
 				alert( "complete" );
+				$("#download").removeClass("loading")
 			});
 		});
 
@@ -106,7 +127,7 @@
 	             .xScale(x)
 	             .yScale(y)
 	             .y(function(d) {
-					 console.log("D", d)
+					 // console.log("D", d)
 	                 // Display the buy and sell arrows a bit above and below the price, so the price is still visible
 	                 if(d.type === 'BUY') return y(d.price)+25;
 	                 if(d.type === 'SELL') return y(d.price)-25;
@@ -148,7 +169,7 @@
 
 
 
-			 var svg = d3.select("#chart").append("svg")
+			 var svg = d3.select("#intraDayCharts").append("svg")
 					 .attr("width", width + margin.left + margin.right)
 					 .attr("height", height + margin.top + margin.bottom)
 					 .append("g")
@@ -205,7 +226,7 @@
 
 				 data = data.map(function (d) {
 					 return {
-						 date: parseDate(moment(parseInt(d.Datetime, 10)).format('D-MMM-YY H:m')),
+						 date: parseDate(moment(parseInt(d.Datetime, 10)).local().format('D-MMM-YY H:m')),
 						 open: +d.Open,
 						 high: +d.High,
 						 low: +d.Low,
@@ -276,13 +297,13 @@
 
 
 
-		function dailyChart(symbol, csvPath) {
+		function dailyChart(symbol, csvPath, chartTimeFrame) {
 			var margin = {top: 20, right: 20, bottom: 30, left: 50},
 		            width = 960 - margin.left - margin.right,
 		            height = 500 - margin.top - margin.bottom;
 			// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
 			var dateFormat = d3.timeFormat("%d-%b-%y %H:%M:%S"),
-				parseDate = d3.timeParse("%d-%b-%y %H:%M"),
+				parseDate = d3.timeParse("%d-%b-%y"),
 		        // parseDate = d3.timeParse("%d-%b-%y"),
 		        valueFormat = d3.format(',.2f');
 
@@ -313,7 +334,7 @@
 		    var yAxis = d3.axisLeft()
 		            .scale(y);
 
-		    var svg = d3.select("#chart").append("svg")
+		    var svg = d3.select("#dailyChart").append("svg")
 		            .attr("width", width + margin.left + margin.right)
 		            .attr("height", height + margin.top + margin.bottom)
 		            .append("g")
@@ -329,7 +350,9 @@
 			var ohlcAnnotation = techan.plot.axisannotation()
 				.axis(yAxis)
 				.orient('left')
-				.format(d3.format(',.2f'));
+				// .accessor(candlestick.accessor())
+				.format(d3.format(',.2f'))
+				// .translate([x(1), 0]);
 
 			var ohlcRightAnnotation = techan.plot.axisannotation()
 		            .axis(yRightAxis)
@@ -371,9 +394,9 @@
 		        var accessor = candlestick.accessor();
 
 		        data = data.map(function(d) {
-
 		            return {
-		                date: parseDate(moment(parseInt(d.Datetime, 10)).format('D-MMM-YY H:m')),
+						//This is dumb. We are adding time to offset the utc time to be inside the same day when it's converted. TD AMERITRADE GIVES US THE TIME AS 06:00 SO WHEN CONVERTED, IT DROPS BACK TO THE PREVIOUS DAY AT 22:00, TRUNCATES AND THEN DISPLAYS 1 DAY OFFSET...
+		                date: parseDate(moment.utc((parseInt(d.Datetime, 10))+ 10000000).local().format('D-MMM-YY')),
 		                open: +d.Open,
 		                high: +d.High,
 		                low: +d.Low,
@@ -382,18 +405,18 @@
 		            };
 		        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
 
+				//cut down the data to the time frame we want if needed. Raw data should be 1 year worth:
+				data = data.slice(data.length - (data.length/chartTimeFrame), data.length)
+
 				//cross
 				x.domain(data.map(accessor.d));
 				y.domain(techan.scale.plot.ohlc(data, accessor).domain());
 
-
-				console.log({{.Executions}})
-				console.log(data)
 				//trade arrows:
 				var trades = [
 					{{range .Executions}}
 
-						{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
+						{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
 					{{end}}
 					// { date: data[67].date, type: "buy", price: data[67].low, quantity: 1000 },
 					// { date: data[100].date, type: "sell", price: data[100].high, quantity: 200 },
@@ -456,8 +479,8 @@
 		                .text("(" + {{ .Symbol}} +")");
 
 		        // Data to display initially
-		        // draw(data.slice(0, data.length-20));
-				draw(data, trades);
+		        draw(data, trades);
+				// draw(data, trades);
 		        // Only want this button to be active if the data has loaded
 		        // d3.select("button").on("click", function() { draw(data); }).style("display", "inline");
 		    });
@@ -471,6 +494,7 @@
 				svg.selectAll("g.tradearrow").datum(trades).call(tradearrow);
 		        svg.selectAll("g.x.axis").call(xAxis);
 		        svg.selectAll("g.y.axis").call(yAxis);
+				// svg.selectAll("g.y.annotation.left").datum(leftData).call(ohlcAnnotation);
 		    }
 
 			// function enterArrow(d) {
@@ -504,9 +528,14 @@
 		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"
 		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv"
 		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
-		 chart("Entry", entryPath,500, 300);
-		 chart("Exit", exitPath,500, 300);
-		 dailyChart("Year", dailyPath);
+		chart("Entry", entryPath,500, 300);
+		chart("Exit", exitPath,500, 300);
+
+		 //chartTimeFrame is the following:
+		 //1 = 1 year
+		 //2 = 6 months
+		 //4 = 3 months
+		dailyChart("Year", dailyPath, 4);
 		 // chart("Apple, Inc.", "AAPL", 300, 200);
 
 

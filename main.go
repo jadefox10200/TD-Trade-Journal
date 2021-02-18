@@ -27,10 +27,16 @@ import (
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 
-//TODO: MAKE A TRADE VIEW PAGE INCLUDING A CHART SHOWING ENTRY AND EXIT!!!!
+//BUG: NOT PULLING EXTENDED HOURS WHEN WE SHOULD... SOMETHING IS WRONG WITH OUT TIME CHECKING.
 
-//TODO: Fix Trade TABLE VIEW SO THAT IT PULLS FROM THE TRADE TABLE AND MAKE EACH ROW CLICKABL
+//TODO: MAKE IT SO THAT WHEN A TRADE IS LOADED, THE CHARTS ARE LOADED AT THAT TIME.
+//BUG: WON'T PULL CHART DATA FOR 14 DECEMBER... DON'T UNDERSTAND WHY THIS IS BECAUSE IT WON'T WORK WITH THE API DIRECTLY EITHER.
+
+//BUG: WHEN IT IS A SWING TRADE, ONLY SHOW THE ENTRY ARROW ON THE ENTRY GRAPH AND ONLY THE EXIT ARROW ON THE EXIT GRAPH...
+
+//TODO: GET OPENING TRADES FOR DAYS WHERE THEY ARE SWING TRADES AND DON'T COUNT AS CLOSED.
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
+//TODO: ADD TAGGING.
 
 type DbDao struct {
 	db *sql.DB
@@ -153,8 +159,8 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	marketOpenTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 6, 30, 0, 0, timeEnd.Location())
-	marketCloseTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 13, 0, 0, 0, timeEnd.Location())
+	marketOpenTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 14, 30, 0, 0, timeEnd.Location())
+	marketCloseTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 21, 0, 0, 0, timeEnd.Location())
 
 	//time is in UTC... annoying but that's how we get the data from TD AMERITRADE and so it is used as the stable dataum
 	marketOpenTimeEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 14, 30, 0, 0, timeEnd.Location())
@@ -175,19 +181,31 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		// EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
 	}
 	//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
-	fmt.Println(timeStart.Before(marketOpenTimeStart))
-	fmt.Println(timeStart.String())
-	fmt.Println(marketOpenTimeStart.String())
 	if timeStart.Before(marketOpenTimeStart) || timeStart.After(marketCloseTimeStart) {
 		exhours = true
 	}
+	fmt.Println("start:", timeStart.String())
+	fmt.Println("open:", marketOpenTimeStart.String())
+	fmt.Println("close:", marketCloseTimeStart.String())
+	fmt.Println("before:", timeStart.Before(marketOpenTimeStart))
+	fmt.Println("after:", timeStart.After(marketCloseTimeStart))
+
+	//determine the entry date range:
+	entryDayStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 14, 30, 0, 0, timeEnd.Location())
+	entryDayEnd := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 21, 00, 0, 0, timeEnd.Location())
 	optsE := tdameritrade.PriceHistoryOptions{
 		PeriodType:            "day",
 		FrequencyType:         "minute",
 		Frequency:             1,
 		NeedExtendedHoursData: &exhours,
-		StartDate:             tdameritrade.ConvertToEpoch(timeStart),
-		EndDate:               tdameritrade.ConvertToEpoch(timeStart),
+		StartDate:             tdameritrade.ConvertToEpoch(entryDayStart),
+		EndDate:               tdameritrade.ConvertToEpoch(entryDayEnd),
+	}
+
+	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
+		return
 	}
 
 	exhours = false
@@ -195,19 +213,15 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		exhours = true
 	}
 
+	exitDayStart := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 14, 30, 0, 0, timeEnd.Location())
+	exitDayEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 21, 00, 0, 0, timeEnd.Location())
 	optsX := tdameritrade.PriceHistoryOptions{
 		PeriodType:            "day",
 		FrequencyType:         "minute",
 		Frequency:             1,
 		NeedExtendedHoursData: &exhours,
-		StartDate:             tdameritrade.ConvertToEpoch(timeEnd),
-		EndDate:               tdameritrade.ConvertToEpoch(timeEnd),
-	}
-
-	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
-		return
+		StartDate:             tdameritrade.ConvertToEpoch(exitDayStart),
+		EndDate:               tdameritrade.ConvertToEpoch(exitDayEnd),
 	}
 
 	phX, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsX)

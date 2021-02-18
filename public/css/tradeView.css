@@ -8,13 +8,14 @@
 	font-size: 14px;
 }
 
-#chart {
+.chart .centerIt{
 	text-align: center;
 }
 
 /* chart css: */
-#chart {
+.chart {
         font: 10px sans-serif;
+		text-align: center;
     }
 
     .axis text {
