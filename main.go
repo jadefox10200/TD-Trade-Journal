@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocarina/gocsv"
 	"github.com/gorilla/securecookie"
+	"github.com/jadefox10200/backoff"
 	"github.com/jadefox10200/go-tdameritrade"
 	"golang.org/x/oauth2"
 )
@@ -140,7 +140,7 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println(startDate)
 
-	if symbol == "" || startDate == "" || endDate == "" {
+	if symbol == "" || startDate == "" || endDate == "" || id == "" {
 		http.Error(w, fmt.Sprintf("Failed to get params correctly: %s", r.URL.String()), 500)
 		return
 	}
@@ -200,7 +200,7 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 		EndDate:               tdameritrade.ConvertToEpoch(entryDayEnd),
 	}
 
-	phE, _, _ := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
+	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
 	if err == nil {
 		// 	http.Error(w, fmt.Sprintf("Failed to get price history :%s\n", err.Error()), 500)
 		// 	return
@@ -855,6 +855,14 @@ func (h *TDHandlers) GetTrades(w http.ResponseWriter, req *http.Request) {
 
 func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 
+	ctx := context.Background()
+	client, err := h.authenticator.AuthenticatedClient(ctx, req)
+	if err != nil {
+		//we assume that if there is an error, we should log back in:
+		http.Error(w, fmt.Sprintf("Failed to authenticate: %s", err.Error()), 401)
+		return
+	}
+
 	tx, err := db.db.Begin()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to begin tx: %s", err.Error()), 500)
@@ -867,8 +875,11 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	//implement backoff policy so we don't hit TD Ameritrade too often
+	p := backoff.Default()
+
 	insertStr := "INSERT INTO tradeHistory(symbol, profitLoss, quantity, entryPrice, exitPrice, openDate, closeDate, tradeType, avgEntryPrice, avgExitPrice, percentGain, executions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-	updateStr := "UPDATE tradeTransactions SET tradeStatus = 'CLOSED' where orderId = ?"
+	updateStr := "UPDATE tradeTransactions SET tradeStatus = 'CLOSED', tradeId = ? where orderId = ?"
 	var affected int64
 	for k, v := range tradeRows {
 		if v.TradeStatus != "CLOSED" {
@@ -893,9 +904,17 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, fmt.Sprintf("Something is wrong. OrderIdSlice is empty for %s|%s", v.Symbol, v.OpenDate), 500)
 			return
 		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Failed to get result id somehow", 500)
+			return
+		}
+
 		for _, j := range v.OrderIdSlice {
 
-			result, err := tx.Exec(updateStr, j)
+			result, err := tx.Exec(updateStr, id, j)
 			if err != nil {
 				tx.Rollback()
 				http.Error(w, fmt.Sprintf("Failed to update a row with id: %s|%s", j, err.Error()), 500)
@@ -905,32 +924,19 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 			if err != nil || num != 1 {
 				tx.Rollback()
 				http.Error(w, fmt.Sprintf("Something went wrong with the result id: %s", j), 500)
+				return
 			}
 		}
 
-		id, err := result.LastInsertId()
+		//if anything goes wrong, die:
+		err = DownloadChartsLoop(client, ctx, v.Symbol, v.OpenDate, v.CloseDate, strconv.FormatInt(id, 10))
 		if err != nil {
 			tx.Rollback()
-			http.Error(w, "Failed to get result id somehow", 500)
+			http.Error(w, fmt.Sprintf("We failed to download a chart: %s\n", err.Error()), 500)
 			return
 		}
-
-		//probably not the best method, but we will simply call ourselves to download the charts. We will report the error to the terminal, but we shouldn't stop the entire process just on the account of the chart. Therefore, we will only log the error but not stop on it.
-		od := url.QueryEscape(v.OpenDate)
-		cd := url.QueryEscape(v.CloseDate)
-		resp, err := http.Get(fmt.Sprintf("http://localhost%s/downloadCharts?id=%v&symbol=%s&startDate=%s&endDate=%s", port, id, v.Symbol, od, cd))
-		if err != nil {
-			fmt.Printf("We failed on the request to the get the charts for id:%v, symbol:%s|%s\n", id, v.Symbol, err.Error())
-			continue
-		}
-		if resp.StatusCode != 200 {
-			bs, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Println("failed to read response after getting non 200... this isn't going well")
-				continue
-			}
-			fmt.Printf("We got a non 200 response from downloadChart request: %s\n ", string(bs))
-		}
+		//because we are going to call TD Ameritrade a bunch, we have to slow down...
+		p.Sleep()
 
 	}
 
@@ -944,15 +950,111 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 
 	io.WriteString(w, fmt.Sprintf("Saved %v trades", affected))
 
-	// err = json.NewEncoder(w).Encode(tradeRows)
-	// if err != nil {
-	// 	http.Error(w,
-	// 		fmt.Sprintf("GetTrades produced the following error during encoding: %s.\n", err.Error()),
-	// 		500)
-	// 	return
-	// }
+	p.Decrease()
 
 	return
+
+}
+
+func DownloadChartsLoop(client *tdameritrade.Client, ctx context.Context, symbol, startDate, endDate, id string) error {
+
+	if symbol == "" || startDate == "" || endDate == "" || id == "" {
+		return fmt.Errorf("Failed to get input in downloadChartsLoop\n")
+	}
+
+	// const UTCTimeFormat = "2006-01-02T15:04:05-0700"
+	timeStart, err := time.Parse(UTCTimeFormat, startDate)
+	if err != nil {
+		return fmt.Errorf("Failed to parse startDate: %s\n", err.Error())
+	}
+	timeEnd, err := time.Parse(UTCTimeFormat, endDate)
+	if err != nil {
+		return fmt.Errorf("Failed to parse endDate: %s\n", err.Error())
+	}
+
+	marketOpenTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 14, 30, 0, 0, timeEnd.Location())
+	marketCloseTimeStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 21, 0, 0, 0, timeEnd.Location())
+
+	//time is in UTC... annoying but that's how we get the data from TD AMERITRADE and so it is used as the stable dataum
+	marketOpenTimeEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 14, 30, 0, 0, timeEnd.Location())
+	marketCloseTimeEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 21, 0, 0, 0, timeEnd.Location())
+
+	//IDEA: TD AMERITRADE WILL PROVIDE A MINIMUM OF 1 FULL DAY. THEREFORE, WE CAN OMIT ROUNDING TIME AS IT WON'T GIVE US PART OF A DAY. WE WILL NEED TO PARSE THAT DATA OUT OURSELVES IF WE ONLY WANT TO SHOW A PIECE OF THE DAY.
+	var exhours = false
+
+	//TODO:
+	//we in theory shouldcheck to make sure our trade is within the correct date frame. However, this would only
+	//cause an issue if we were pulling really old data.
+	optsD := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "year",
+		FrequencyType:         "daily",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		// StartDate:             tdameritrade.ConvertToEpoch(roundedStart),
+		// EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
+	}
+	//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
+	if timeStart.Before(marketOpenTimeStart) || timeStart.After(marketCloseTimeStart) {
+		exhours = true
+	}
+
+	//determine the entry date range:
+	entryDayStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 14, 30, 0, 0, timeEnd.Location())
+	entryDayEnd := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 21, 00, 0, 0, timeEnd.Location())
+	optsE := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "day",
+		FrequencyType:         "minute",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		StartDate:             tdameritrade.ConvertToEpoch(entryDayStart),
+		EndDate:               tdameritrade.ConvertToEpoch(entryDayEnd),
+	}
+
+	//if we error on the return we simply assume we are out of range and TD Ameritrade won't give use the data. Therefore, we ignore this as it can't be fixed. We should at least be able to get the daily view which comes later.
+	phE, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsE)
+	if err == nil {
+		err = SaveCandlesToCSV(phE, id, "entry")
+		if err != nil {
+			return fmt.Errorf("failed to save csv: %s\n", err.Error())
+		}
+	}
+
+	exhours = false
+	if timeEnd.Before(marketOpenTimeEnd) || timeEnd.After(marketCloseTimeEnd) {
+		exhours = true
+	}
+
+	exitDayStart := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 14, 30, 0, 0, timeEnd.Location())
+	exitDayEnd := time.Date(timeEnd.Year(), timeEnd.Month(), timeEnd.Day(), 21, 00, 0, 0, timeEnd.Location())
+	optsX := tdameritrade.PriceHistoryOptions{
+		PeriodType:            "day",
+		FrequencyType:         "minute",
+		Frequency:             1,
+		NeedExtendedHoursData: &exhours,
+		StartDate:             tdameritrade.ConvertToEpoch(exitDayStart),
+		EndDate:               tdameritrade.ConvertToEpoch(exitDayEnd),
+	}
+
+	phX, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsX)
+	if err == nil {
+		err = SaveCandlesToCSV(phX, id, "exit")
+		if err != nil {
+			return fmt.Errorf("failed to save csv: %s\n", err.Error())
+		}
+
+	}
+
+	phD, _, err := client.PriceHistory.PriceHistory(ctx, symbol, &optsD)
+	if err != nil {
+		return fmt.Errorf("Failed to get price history :%s\n", err.Error())
+	}
+
+	err = SaveCandlesToCSV(phD, id, "day")
+	if err != nil {
+		return fmt.Errorf("failed to save csv: %s\n", err.Error())
+	}
+
+	return nil
 
 }
 
