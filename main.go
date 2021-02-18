@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,8 +29,6 @@ import (
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 
 //BUG: NOT PULLING EXTENDED HOURS WHEN WE SHOULD... SOMETHING IS WRONG WITH OUT TIME CHECKING.
-
-//TODO: MAKE IT SO THAT WHEN A TRADE IS LOADED, THE CHARTS ARE LOADED AT THAT TIME.
 
 //BUG: WHEN IT IS A SWING TRADE, ONLY SHOW THE ENTRY ARROW ON THE ENTRY GRAPH AND ONLY THE EXIT ARROW ON THE EXIT GRAPH...
 
@@ -268,17 +267,6 @@ func ensureDir(fileName string) error {
 	}
 	return nil
 }
-
-// func ensureDir(dirName string) error {
-//
-// 	err := os.MkdirAll(dirName, os.ModeDir)
-//
-// 	if err == nil || os.IsExist(err) {
-// 		return nil
-// 	} else {
-// 		return err
-// 	}
-// }
 
 func SaveCandlesToCSV(ph *tdameritrade.PriceHistory, id string, timeFrame string) error {
 	filename := fmt.Sprintf("charts/%s/%s/%s.csv", ph.Symbol, id, timeFrame)
@@ -919,6 +907,31 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 				http.Error(w, fmt.Sprintf("Something went wrong with the result id: %s", j), 500)
 			}
 		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Failed to get result id somehow", 500)
+			return
+		}
+
+		//probably not the best method, but we will simply call ourselves to download the charts. We will report the error to the terminal, but we shouldn't stop the entire process just on the account of the chart. Therefore, we will only log the error but not stop on it.
+		od := url.QueryEscape(v.OpenDate)
+		cd := url.QueryEscape(v.CloseDate)
+		resp, err := http.Get(fmt.Sprintf("http://localhost%s/downloadCharts?id=%v&symbol=%s&startDate=%s&endDate=%s", port, id, v.Symbol, od, cd))
+		if err != nil {
+			fmt.Printf("We failed on the request to the get the charts for id:%v, symbol:%s|%s\n", id, v.Symbol, err.Error())
+			continue
+		}
+		if resp.StatusCode != 200 {
+			bs, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("failed to read response after getting non 200... this isn't going well")
+				continue
+			}
+			fmt.Printf("We got a non 200 response from downloadChart request: %s\n ", string(bs))
+		}
+
 	}
 
 	err = tx.Commit()
