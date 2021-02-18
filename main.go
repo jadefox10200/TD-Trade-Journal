@@ -28,10 +28,6 @@ import (
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 
-//BUG: NOT PULLING EXTENDED HOURS WHEN WE SHOULD... SOMETHING IS WRONG WITH OUT TIME CHECKING.
-
-//BUG: WHEN IT IS A SWING TRADE, ONLY SHOW THE ENTRY ARROW ON THE ENTRY GRAPH AND ONLY THE EXIT ARROW ON THE EXIT GRAPH...
-
 //TODO: GET OPENING TRADES FOR DAYS WHERE THEY ARE SWING TRADES AND DON'T COUNT AS CLOSED.
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
 //TODO: ADD TAGGING.
@@ -62,8 +58,8 @@ var hashKey = []byte("")
 var blockKey = []byte("")
 
 func main() {
-
-	dbString := "root:10200mille@/TradeJournal"
+	dblogin := os.Getenv("DBLOGIN")
+	dbString := fmt.Sprintf("root:%s@/TradeJournal", dblogin)
 	err := db.Init(dbString)
 	if err != nil {
 		log.Fatal("Failed to create db connection:", err.Error())
@@ -1063,13 +1059,19 @@ func CompileTrades(save bool) ([]Trade, error) {
 
 	var queryString string
 	if save {
-		queryString = `select orderId, symbol, instruction, amount, price, transactionDate  from tradeTransactions where tradeStatus = 'OPEN' order by symbol, transactionDate ASC;`
+		queryString = `select orderId, symbol, instruction, amount, price, transactionDate  from tradeTransactions where tradeStatus = 'OPEN' order by symbol, transactionDate ASC`
 	} else {
-		queryString = `select orderId, symbol, instruction, amount, price, transactionDate from tradeTransactions order by symbol, transactionDate ASC;`
+		queryString = `select orderId, symbol, instruction, amount, price, transactionDate from tradeTransactions order by symbol, transactionDate ASC`
 	}
 	rows, err := db.db.Query(queryString)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get rows: %s", err.Error())
+	}
+
+	var rowsCount int
+	err = db.db.QueryRow(fmt.Sprintf("select count(*) from (%s) a", queryString)).Scan(&rowsCount)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get count: %s\n", err.Error())
 	}
 
 	defer rows.Close()
@@ -1077,7 +1079,9 @@ func CompileTrades(save bool) ([]Trade, error) {
 	tradeSlice := make([]TradeOrder, 0)
 	tradeRows := make([]Trade, 0)
 	var first = true
+	var counter int
 	for rows.Next() {
+		counter++
 		var t = TradeOrder{}
 		err := rows.Scan(&t.OrderId, &t.Symbol, &t.Instruction, &t.Quantity, &t.Price, &t.OrderDate)
 		if err != nil {
@@ -1095,9 +1099,20 @@ func CompileTrades(save bool) ([]Trade, error) {
 				return nil, fmt.Errorf("Failed to getTradeRow %s", err.Error())
 			}
 			tradeSlice = nil
+
 		}
 		//empty the tradeSlice so we can build another symbol collection:
 		tradeSlice = append(tradeSlice, t)
+
+		//somehow,we need to check if we are on the last line... if we are, we won't loop back to build the row...
+		if counter == rowsCount {
+			fmt.Println("hit last line at least")
+			fmt.Println(tradeSlice)
+			err = BuildTradeRow(tradeSlice, &tradeRows, 0)
+			if err != nil {
+				return nil, fmt.Errorf("Failed on the last row of getTradeRow: %s", err.Error())
+			}
+		}
 	}
 
 	return tradeRows, nil
@@ -1570,14 +1585,26 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+func testFunc(chartStart string, chartEnd string, tradeDate string) bool {
+
+	fmt.Println(chartStart)
+	fmt.Println(chartEnd)
+	fmt.Println(tradeDate)
+
+	return true
+}
+
 func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
 	// parse templates
-	tpl := template.New("")
+	tpl := template.New("").Funcs(template.FuncMap{
+		"testFunc": testFunc,
+	})
 	tpl, err := tpl.ParseGlob("templates/*.gohtml")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+
 	// execute page
 	var bufBody, bufHeader, bufFooter bytes.Buffer
 	err = tpl.ExecuteTemplate(&bufHeader, "header", data)
