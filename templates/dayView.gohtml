@@ -16,12 +16,32 @@
 
 		<div class="ui clearing divider"></div>
 
-		<h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2>
 
-		<div>
-			<li class="title_collection">Total trades: <span id="numTradesSpan"></span></li>
-			<li class="title_collection">Total volume: <span id="numSharesSpan"></span></li>
-			<li class="title_collection">Closed P&L: <span id="closedValueSpan"></span></li>
+		<div class="ui grid" >
+			<div class="four wide column">
+				<h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2>
+				<div>
+					<li class="title_collection">Total trades: <span id="numTradesSpan"></span></li>
+					<li class="title_collection">Total volume: <span id="numSharesSpan"></span></li>
+					<li class="title_collection">Closed P&L: <span id="closedValueSpan"></span></li>
+				</div>
+			</div>
+			<div class="twelve wide column">
+				<a id="addNote">Add Note</a>
+				<div id="noteTextContainer">
+					<textarea id="editor1" contenteditable="true"></textarea>
+					<div style="padding-top: 15px;">
+						<button id="saveBtn" class="mini ui button basic green">Save</button>
+						<button id="cancelBtn" class="mini ui button basic red">Cancel</button>
+					</div>
+				</div>
+				<div id="noteContainer">
+					<h2>Daily Notes:</h2>
+					<div id="noteStaticData">{{.NoteData}}</div>
+					<div style="padding-top: 15px;"><button class='mini ui button basic blue' id='editBtn'>Edit Note</button></div>
+				</div>
+			</div>
+
 		</div>
 
 		<div class="ui clearing divider"></div>
@@ -34,7 +54,8 @@
 						<th>Volume</th>
 						<th>P&L</th>
 						<th>Win/Loss %</th>
-						<th>Transaction Date</th>
+						<th>Open Date</th>
+						<th>Close Date</th>
 					</tr>
 				</thead>
 				<tbody id="tableBody">
@@ -47,8 +68,82 @@
 
 <script>
 
-
 	$( document ).ready(function() {
+
+		{{if .HasNote}}
+			$("#addNote").css('display', 'none')
+			$("#noteContainer").css('display', 'inline');
+			$("#editor1").html({{.NoteData}});
+			// CKEDITOR.instances['editor1'].setData({{.NoteData}})
+
+			$("#cancelBtn").on('click', function() {
+				$("#noteTextContainer").css('display', 'none')
+				$("#noteContainer").css('display', 'inline');
+			})
+
+			$("#editBtn").on('click', function() {
+				$("#noteContainer").css('display', 'none')
+				$("#noteTextContainer").css('display', 'inline');
+			})
+
+		{{else}}
+
+			$("#addNote").on('click', function() {
+				$(this).css('display', 'none');
+				$("#noteTextContainer").css('display', 'inline');
+
+			})
+
+			$("#cancelBtn").on('click', function() {
+				$("#addNote").css('display', 'inline')
+				$("#noteTextContainer").css('display', 'none');
+			})
+
+		{{end}}
+
+		$( '#editor1' ).ckeditor({
+			uiColor: '#14B8C4',
+			height: 150
+			// toolbar: [
+			// 	[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+			// 	[ 'FontSize', 'TextColor', 'BGColor' ]
+			// ]
+		});
+
+		$("#saveBtn").on('click', function() {
+			var data = $("#editor1").val();
+			var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+			var obj = {
+				NoteDate: date,
+				NoteData: data,
+			}
+			$.ajax({
+				type: "POST",
+			  url: "/saveNoteDay",
+			  data: obj
+			})
+			.done(function(data) {
+				var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+				window.location.href = "/tpl/dayView?date="+ date +""
+			})
+			.fail(function(data) {
+				alert(data.responseText)
+			});
+
+			//when we save, just reload the damn page...
+
+		})
+
+		// CKEDITOR.replace( 'editor1', {
+		// 	uiColor: '#14B8C4',
+		// 	toolbar: [
+		// 		[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+		// 		[ 'FontSize', 'TextColor', 'BGColor' ]
+		// 	]
+		// });
+
+
+
 
 		$('input[name="singleDate"]').daterangepicker({
 			singleDatePicker: true,
@@ -81,16 +176,6 @@
 		var date = moment($("#dateHeader").attr("date")).format("DD-MM-YYYY")
 		$("#singleDate").val(date)
 
-		$("btnLoadTrades").on('click', function() {
-			var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
-			$.ajax({
-			  url: "/loadTradeDate",
-			  data: date
-			  // success: success,
-			  // dataType: dataType
-			});
-		})
-
 		var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
 		var url = "/getTradesForDayView?date=" + date
 		$.getJSON(url, function(dataSet, status){
@@ -114,12 +199,17 @@
 
 		function rowBuilder(data) {
 			console.log("Data",data)
-			return '<tr>'
-					+ '<td width="90">'
-						+ '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
+			var row = ''
+			row += '<tr>'
+					+ '<td width="90">';
+					if (data.ID != 0) {
+						row += '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
 							+ data.Symbol
 						+ '</a>'
-					+ '</td>'
+					} else {
+						row += data.Symbol
+					}
+					row += '</td>'
 					+ '<td>'
 						+ data.Quantity
 					+ '</td>'
@@ -130,9 +220,13 @@
 						+ data.PercentGain
 					+ '%</td>'
 					+ '<td>'
+						+ data.OpenDate
+					+ '</td>'
+					+ '<td>'
 						+ data.CloseDate
 					+ '</td>'
 			+ '</tr>';
+			return row
 		}
 
 	});

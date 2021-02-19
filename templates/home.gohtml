@@ -1,215 +1,32 @@
 {{define "home"}}
 
 <div id="homeBody">
-	<div class="ui segment center">
-		<div id="chart"></div>
+
+	<h2 class="samples">Inline Example</h2>
+
+	<div id="editable" contenteditable="true">
+		<p><img alt="Saturn V carrying Apollo 11" class="right" src="assets/sample.jpg"/><b>Apollo 11</b> was the spaceflight that landed the first humans, Americans <a href="http://en.wikipedia.org/wiki/Neil_Armstrong" title="Neil Armstrong">Neil Armstrong</a> and <a href="http://en.wikipedia.org/wiki/Buzz_Aldrin" title="Buzz Aldrin">Buzz Aldrin</a>, on the Moon on July 20, 1969, at 20:18 UTC. Armstrong became the first to step onto the lunar surface 6 hours later on July 21 at 02:56 UTC.</p>
+		<p>Armstrong spent about <s>three and a half</s> two and a half hours outside the spacecraft, Aldrin slightly less; and together they collected 47.5 pounds (21.5&nbsp;kg) of lunar material for return to Earth. A third member of the mission, <a href="http://en.wikipedia.org/wiki/Michael_Collins_(astronaut)" title="Michael Collins (astronaut)">Michael Collins</a>, piloted the <a href="http://en.wikipedia.org/wiki/Apollo_Command/Service_Module" title="Apollo Command/Service Module">command</a> spacecraft alone in lunar orbit until Armstrong and Aldrin returned to it for the trip back to Earth.
+		<p>Broadcast on live TV to a world-wide audience, Armstrong stepped onto the lunar surface and described the event as:</p>
+		<blockquote><p>One small step for [a] man, one giant leap for mankind.</p></blockquote> <p>Apollo 11 effectively ended the <a href="http://en.wikipedia.org/wiki/Space_Race" title="Space Race">Space Race</a> and fulfilled a national goal proposed in 1961 by the late U.S. President <a href="http://en.wikipedia.org/wiki/John_F._Kennedy" title="John F. Kennedy">John F. Kennedy</a> in a speech before the United States Congress:</p> <blockquote><p>[...] before this decade is out, of landing a man on the Moon and returning him safely to the Earth.</p></blockquote>
 	</div>
+
+	<br style="clear: both">
+
+	<h2 class="samples">Classic (iframe-based) Example</h2>
+
+	<textarea cols="80" id="editor1" name="editor1" rows="10">
+		&lt;h2&gt;Technical details &lt;a id=&quot;tech-details&quot; name=&quot;tech-details&quot;&gt;&lt;/a&gt;&lt;/h2&gt; &lt;table align=&quot;right&quot; border=&quot;1&quot; bordercolor=&quot;#ccc&quot; cellpadding=&quot;5&quot; cellspacing=&quot;0&quot; style=&quot;border-collapse:collapse;margin:10px 0 10px 15px;&quot;&gt; &lt;caption&gt;&lt;strong&gt;Mission crew&lt;/strong&gt;&lt;/caption&gt; &lt;thead&gt; &lt;tr&gt; &lt;th scope=&quot;col&quot;&gt;Position&lt;/th&gt; &lt;th scope=&quot;col&quot;&gt;Astronaut&lt;/th&gt; &lt;/tr&gt; &lt;/thead&gt; &lt;tbody&gt; &lt;tr&gt; &lt;td&gt;Commander&lt;/td&gt; &lt;td&gt;Neil A. Armstrong&lt;/td&gt; &lt;/tr&gt; &lt;tr&gt; &lt;td&gt;Command Module Pilot&lt;/td&gt; &lt;td&gt;Michael Collins&lt;/td&gt; &lt;/tr&gt; &lt;tr&gt; &lt;td&gt;Lunar Module Pilot&lt;/td&gt; &lt;td&gt;Edwin &amp;quot;Buzz&amp;quot; E. Aldrin, Jr.&lt;/td&gt; &lt;/tr&gt; &lt;/tbody&gt; &lt;/table&gt; &lt;p&gt;Launched by a &lt;strong&gt;Saturn V&lt;/strong&gt; rocket from &lt;a href=&quot;http://en.wikipedia.org/wiki/Kennedy_Space_Center&quot; title=&quot;Kennedy Space Center&quot;&gt;Kennedy Space Center&lt;/a&gt; in Merritt Island, Florida on July 16, Apollo 11 was the fifth manned mission of &lt;a href=&quot;http://en.wikipedia.org/wiki/NASA&quot; title=&quot;NASA&quot;&gt;NASA&lt;/a&gt;&amp;#39;s Apollo program. The Apollo spacecraft had three parts:&lt;/p&gt; &lt;ol&gt; &lt;li&gt;&lt;strong&gt;Command Module&lt;/strong&gt; with a cabin for the three astronauts which was the only part which landed back on Earth&lt;/li&gt; &lt;li&gt;&lt;strong&gt;Service Module&lt;/strong&gt; which supported the Command Module with propulsion, electrical power, oxygen and water&lt;/li&gt; &lt;li&gt;&lt;strong&gt;Lunar Module&lt;/strong&gt; for landing on the Moon.&lt;/li&gt; &lt;/ol&gt; &lt;p&gt;After being sent to the Moon by the Saturn V&amp;#39;s upper stage, the astronauts separated the spacecraft from it and travelled for three days until they entered into lunar orbit. Armstrong and Aldrin then moved into the Lunar Module and landed in the &lt;a href=&quot;http://en.wikipedia.org/wiki/Mare_Tranquillitatis&quot; title=&quot;Mare Tranquillitatis&quot;&gt;Sea of Tranquility&lt;/a&gt;. They stayed a total of about 21 and a half hours on the lunar surface. After lifting off in the upper part of the Lunar Module and rejoining Collins in the Command Module, they returned to Earth and landed in the &lt;a href=&quot;http://en.wikipedia.org/wiki/Pacific_Ocean&quot; title=&quot;Pacific Ocean&quot;&gt;Pacific Ocean&lt;/a&gt; on July 24.&lt;/p&gt; &lt;hr/&gt; &lt;p style=&quot;text-align: right;&quot;&gt;&lt;small&gt;Source: &lt;a href=&quot;http://en.wikipedia.org/wiki/Apollo_11&quot;&gt;Wikipedia.org&lt;/a&gt;&lt;/small&gt;&lt;/p&gt;
+	</textarea>
 </div>
 
 <script>
 
-    var margin = {top: 20, right: 20, bottom: 30, left: 50},
-            width = 960 - margin.left - margin.right,
-            height = 500 - margin.top - margin.bottom;
-	// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
-	var dateFormat = d3.timeFormat("%d-%b-%y"),
-		parseDate = d3.timeParse("%d-%b-%y %H:%M"),
-        // parseDate = d3.timeParse("%d-%b-%y"),
-        valueFormat = d3.format(',.2f');
+	$( document ).ready( function() {
+		$( '#editor1' ).ckeditor(); // Use CKEDITOR.replace() if element is <textarea>.
+		$( '#editable' ).ckeditor(); // Use CKEDITOR.inline().
+	} );
 
-    var x = techan.scale.financetime()
-            .range([0, width]);
-
-    var y = d3.scaleLinear()
-            .range([height, 0]);
-
-    var candlestick = techan.plot.candlestick()
-            .xScale(x)
-            .yScale(y);
-
-	var tradearrow = techan.plot.tradearrow()
-         .xScale(x)
-         .yScale(y)
-         .orient(function(d) { return d.type.startsWith("buy") ? "up" : "down"; })
-         // .on("mouseenter", enterArrow)
-         // .on("mouseout", outArrow);
-
-    var xAxis = d3.axisBottom()
-            .scale(x);
-
-	var xTopAxis = d3.axisTop(x);
-
-    var yRightAxis = d3.axisRight(y);
-
-    var yAxis = d3.axisLeft()
-            .scale(y);
-
-    var svg = d3.select("#chart").append("svg")
-            .attr("width", width + margin.left + margin.right)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-	var coordsText = svg.append('text')
-        .style("text-anchor", "end")
-        .attr("class", "coords")
-        .attr("x", width - 5)
-        .attr("y", 15);
-
-	//cross:
-	var ohlcAnnotation = techan.plot.axisannotation()
-		.axis(yAxis)
-		.orient('left')
-		.format(d3.format(',.2f'));
-
-	var ohlcRightAnnotation = techan.plot.axisannotation()
-            .axis(yRightAxis)
-            .orient('right')
-            .translate([width, 0]);
-
-	var timeAnnotation = techan.plot.axisannotation()
-			.axis(xAxis)
-			.orient('bottom')
-			.format(d3.timeFormat('%Y-%m-%d'))
-			.width(65)
-			.translate([0, height]);
-
-	var timeTopAnnotation = techan.plot.axisannotation()
-        .axis(xTopAxis)
-        .orient('top');
-
-	var crosshair = techan.plot.crosshair()
-         .xScale(x)
-         .yScale(y)
-         .xAnnotation([timeAnnotation, timeTopAnnotation])
-         .yAnnotation([ohlcAnnotation, ohlcRightAnnotation])
-         .on("enter", enter)
-         .on("out", out)
-         .on("move", move);
-		//end cross
-
-
-	//trade arrow text?
-	var valueText = svg.append('text')
-        .style("text-anchor", "end")
-        .attr("class", "coords")
-        .attr("x", width - 5)
-        .attr("y", 15);
-
-    d3.csv("/public/data.csv", function(error, data) {
-        var accessor = candlestick.accessor();
-
-        data = data.slice(0, 200).map(function(d) {
-            return {
-				// moment.unix(yourUnixEpochTime).format('dddd, MMMM Do, YYYY h:mm:ss A')
-
-                date: parseDate(d.Date),
-                open: +d.Open,
-                high: +d.High,
-                low: +d.Low,
-                close: +d.Close,
-                volume: +d.Volume
-            };
-        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
-
-		//cross
-		x.domain(data.map(accessor.d));
-		y.domain(techan.scale.plot.ohlc(data, accessor).domain());
-
-		//trade arrows:
-		var trades = [
-			{ date: data[67].date, type: "buy", price: data[67].low, quantity: 1000 },
-			{ date: data[100].date, type: "sell", price: data[100].high, quantity: 200 },
-			{ date: data[156].date, type: "buy", price: data[156].open, quantity: 500 },
-			{ date: data[167].date, type: "sell", price: data[167].close, quantity: 300 },
-			{ date: data[187].date, type: "buy-pending", price: data[187].low, quantity: 300 }
-		];
-
-        svg.append("g")
-                .attr("class", "candlestick");
-
-		//trade arrow class:
-		svg.append("g")
-                .attr("class", "tradearrow");
-
-        svg.append("g")
-                .attr("class", "x axis")
-                .attr("transform", "translate(0," + height + ")");
-
-        svg.append("g")
-                .attr("class", "y axis")
-                .append("text")
-                .attr("transform", "rotate(-90)")
-                .attr("y", 6)
-                .attr("dy", ".71em")
-                .style("text-anchor", "end")
-                .text("Price ($)");
-
-		svg.append("g")
-                .attr("class", "y annotation left")
-                .datum([{value: 74}, {value: 67.5}, {value: 58}, {value:40}]) // 74 should not be rendered
-                .call(ohlcAnnotation);
-
-        svg.append("g")
-                .attr("class", "x annotation bottom")
-                .datum([{value: x.domain()[30]}])
-                .call(timeAnnotation);
-
-		svg.append('g')
-                .attr("class", "crosshair")
-                .datum({ x: x.domain()[80], y: 67.5 })
-                .call(crosshair)
-                .each(function(d) { move(d); }); // Display the current data
-
-        svg.append('text')
-                .attr("x", 5)
-                .attr("y", 15)
-                .text("Facebook, Inc. (FB)");
-
-        // Data to display initially
-        // draw(data.slice(0, data.length-20));
-		draw(data.slice(0, data.length-20), trades.slice(0, trades.length-1));
-        // Only want this button to be active if the data has loaded
-        // d3.select("button").on("click", function() { draw(data); }).style("display", "inline");
-    });
-	//trades come into this function:
-    function draw(data, trades) {
-        x.domain(data.map(candlestick.accessor().d));
-        y.domain(techan.scale.plot.ohlc(data, candlestick.accessor()).domain());
-
-        svg.selectAll("g.candlestick").datum(data).call(candlestick);
-		//added trade arrows:
-		svg.selectAll("g.tradearrow").datum(trades).call(tradearrow);
-        svg.selectAll("g.x.axis").call(xAxis);
-        svg.selectAll("g.y.axis").call(yAxis);
-    }
-
-	// function enterArrow(d) {
-	// 	valueText.style("display", "inline");
-	// 	refreshText(d);
-	// }
-	//
-	// function outArrow() {
-	// 	valueText.style("display", "none");
-	// }
-
-	function refreshText(d) {
-		valueText.text("Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price));
-	}
-
-	function enter() {
-		coordsText.style("display", "inline");
-	}
-
-	function out() {
-		coordsText.style("display", "none");
-	}
-
-	function move(coords) {
-		coordsText.text(
-			timeAnnotation.format()(coords.x) + ", " + ohlcAnnotation.format()(coords.y)
-		);
-	}
 
 </script>
 

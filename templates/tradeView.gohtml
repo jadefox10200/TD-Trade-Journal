@@ -3,17 +3,26 @@
 <div id="tradeBody">
 
 	<div class="ui segment" id="mainContainer">
-		<li><a href= {{printf "%s" (print .Callback)}}>Back</a></li>
 
-		<h2 class="ui right left" id="symbolHeader">{{ .Symbol}}</h2>
-		<h3 class="ui right left" id="dateHeader">{{ .DisplayDate}}</h3>
+		<div class="ui grid">
+			<div class="four wide column">
+				<li><a href= {{printf "%s" (print .Callback)}}>Back</a></li>
 
-		<div>
-			<li class="title_collection">Total volume: <span id="numSharesSpan">{{ .Shares}}</span></li>
-			<li class="title_collection">Closed P&L: <span id="closedValueSpan">${{ .ProfitLoss}}</span></li>
-			<li class="title_collection">Win/Loss Percent: <span id="percentGainSpace">{{ .PercentGain}}%</span></li>
-			<!-- ADD TITLE FOR MAX TRADE COST TO SHOW HOW MUCH CAPITAL WAS USED FOR THE TRADE -->
-			<!-- WE SHOULD ALSO KEEP TRACK OF THIS IN THE DATABASE FOR ANALYSIS REASONS. -->
+				<h2 class="ui right left" id="symbolHeader">{{ .Symbol}}</h2>
+				<h3 class="ui right left" id="dateHeader">{{ .DisplayDate}}</h3>
+
+				<div>
+
+					<li class="title_collection">Total volume: <span id="numSharesSpan">{{ .Shares}}</span></li>
+					<li class="title_collection">Closed P&L: <span id="closedValueSpan">${{ .ProfitLoss}}</span></li>
+					<li class="title_collection">Win/Loss Percent: <span id="percentGainSpace">{{ .PercentGain}}%</span></li>
+					<!-- ADD TITLE FOR MAX TRADE COST TO SHOW HOW MUCH CAPITAL WAS USED FOR THE TRADE -->
+					<!-- WE SHOULD ALSO KEEP TRACK OF THIS IN THE DATABASE FOR ANALYSIS REASONS. -->
+				</div>
+			</div>
+			<div class="twelve wide column">
+				<!-- PUT NOTES TEXTAREA HERE:  -->
+			</div>
 		</div>
 
 		<div class="ui clearing divider"></div>

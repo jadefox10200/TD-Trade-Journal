@@ -19,6 +19,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocarina/gocsv"
+	"github.com/gorilla/schema"
 	"github.com/gorilla/securecookie"
 	"github.com/jadefox10200/backoff"
 	"github.com/jadefox10200/go-tdameritrade"
@@ -27,9 +28,8 @@ import (
 
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
-
-//TODO: GET OPENING TRADES FOR DAYS WHERE THEY ARE SWING TRADES AND DON'T COUNT AS CLOSED.
-//TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES AND TO DAYS.
+//TODO: SHOW SWING TRADES ON MONTHLY CALENDAR.... MAYBE.
+//TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES.
 //TODO: ADD TAGGING.
 
 type DbDao struct {
@@ -101,6 +101,7 @@ func main() {
 	http.HandleFunc("/saveTrades", handlers.SaveTrades)
 	http.HandleFunc("/getTrades", handlers.GetTrades)
 	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
+	http.HandleFunc("/saveNoteDay", SaveNoteDay)
 
 	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
 	http.HandleFunc("/downloadCharts", handlers.DownloadCharts)
@@ -119,6 +120,49 @@ func main() {
 	log.Fatal(http.ListenAndServe(port, nil))
 }
 
+type Note struct {
+	Id       int
+	NoteDate string `schema:"NoteDate"`
+	NoteData string `schema:"NoteData"`
+}
+
+func SaveNoteDay(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	note := new(Note)
+	decoder := schema.NewDecoder()
+	err := decoder.Decode(note, r.PostForm)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse form: %s\n", err.Error()), 500)
+		return
+	}
+
+	var noteExist bool
+	err = db.db.QueryRow("select exists (select * from notesDayTable where date = ?)", note.NoteDate).Scan(&noteExist)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to check for dateRow: %s\n", err.Error()), 500)
+		return
+	}
+
+	//If we already have a not logged for this day we need to do an update. Only one note per day allows.
+	//DB is set to unique date field to prevent duplicate entries.
+	var queryString string
+	if noteExist {
+		queryString = "UPDATE notesDayTable SET noteData = ? where date = ?"
+	} else {
+		queryString = "INSERT INTO notesDayTable(noteData, date) VALUES (?,?)"
+	}
+
+	_, err = db.db.Exec(queryString, note.NoteData, note.NoteDate)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to set note data: %s\n", err.Error()), 500)
+		return
+	}
+
+	return
+
+}
+
 func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
@@ -133,8 +177,6 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("startDate")
 	endDate := r.URL.Query().Get("endDate")
 	id := r.URL.Query().Get("id")
-
-	fmt.Println(startDate)
 
 	if symbol == "" || startDate == "" || endDate == "" || id == "" {
 		http.Error(w, fmt.Sprintf("Failed to get params correctly: %s", r.URL.String()), 500)
@@ -178,11 +220,6 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 	if timeStart.Before(marketOpenTimeStart) || timeStart.After(marketCloseTimeStart) {
 		exhours = true
 	}
-	fmt.Println("start:", timeStart.String())
-	fmt.Println("open:", marketOpenTimeStart.String())
-	fmt.Println("close:", marketCloseTimeStart.String())
-	fmt.Println("before:", timeStart.Before(marketOpenTimeStart))
-	fmt.Println("after:", timeStart.After(marketCloseTimeStart))
 
 	//determine the entry date range:
 	entryDayStart := time.Date(timeStart.Year(), timeStart.Month(), timeStart.Day(), 14, 30, 0, 0, timeEnd.Location())
@@ -1106,8 +1143,6 @@ func CompileTrades(save bool) ([]Trade, error) {
 
 		//somehow,we need to check if we are on the last line... if we are, we won't loop back to build the row...
 		if counter == rowsCount {
-			fmt.Println("hit last line at least")
-			fmt.Println(tradeSlice)
 			err = BuildTradeRow(tradeSlice, &tradeRows, 0)
 			if err != nil {
 				return nil, fmt.Errorf("Failed on the last row of getTradeRow: %s", err.Error())
@@ -1331,7 +1366,7 @@ func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
 		// TotalFees    float64
 		// FinalPL      float64
 	}{dateRaw, 0, 0, 0.0, tradeSlice}
-	queryString := fmt.Sprintf("select * from tradeHistory where closeDate LIKE '%s%%' order by closeDate ASC;", dateRaw)
+	queryString := fmt.Sprintf("select * from (select tradeId, symbol, 0 as 'profitLoss', FLOOR(amount) as amount, price as entryPrice, 0 as exitPrice, transactionDate, 'OPENED' as closeDate, instruction as TradeType, price as avgEntryPrice, 0 as avgExitPrice, 0 as 'percentGain', sum(1) as executions from tradeTransactions where tradeId not in (select ID from tradeHistory where closeDate like '%s%%') and transactionDate like '%s%%' group by symbol union select ID, symbol, profitLoss, quantity, entryPrice, exitPrice, openDate, closeDate, tradeType, avgEntryPrice, avgExitPrice, percentGain, executions from tradeHistory where closeDate like '%s%%') as trades;", dateRaw, dateRaw, dateRaw)
 	rows, err := db.db.Query(queryString)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
@@ -1346,20 +1381,33 @@ func GetTradesForDayView(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		closeDate, err := time.Parse("2006-01-02T15:04:05-0700", t.CloseDate)
+		data.TradeCount += 1
+		data.SharesTraded += t.Quantity
+		data.ClosedGross += t.ProfitLoss
+
+		openDate, err := time.Parse("2006-01-02T15:04:05-0700", t.OpenDate)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed parse time: %s", err.Error()), 400)
 			return
 		}
 
-		if closeDate.Format("2006-01-02") == dateRaw {
-			data.TradeCount += 1
-			data.SharesTraded += t.Quantity
-			data.ClosedGross += t.ProfitLoss
+		openDate = timeToPST(openDate)
+		t.OpenDate = openDate.Format(tableTimeFormat)
+
+		if t.CloseDate == "OPENED" {
+			data.Trades = append(data.Trades, t)
+		} else {
+			closeDate, err := time.Parse("2006-01-02T15:04:05-0700", t.CloseDate)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed parse time: %s", err.Error()), 400)
+				return
+			}
+
+			closeDate = timeToPST(closeDate)
+			t.CloseDate = closeDate.Format(tableTimeFormat)
+			data.Trades = append(data.Trades, t)
 		}
-		closeDate = timeToPST(closeDate)
-		t.CloseDate = closeDate.Format(tableTimeFormat)
-		data.Trades = append(data.Trades, t)
+
 	}
 
 	err = json.NewEncoder(w).Encode(data)
@@ -1564,12 +1612,30 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		var noteExist bool
+		err = db.db.QueryRow("select exists (select * from notesDayTable where date = ?)", dateRaw).Scan(&noteExist)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to check for dateRow: %s\n", err.Error()), 500)
+			return
+		}
+
+		var noteString string
+		if noteExist {
+			queryString := `select noteData from notesDayTable where date = ?`
+			err = db.db.QueryRow(queryString, dateRaw).Scan(&noteString)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to get note: %s\n", err.Error()), 500)
+				return
+			}
+		}
 
 		data := struct {
 			LoggedIn bool
 			Date     string
 			DateRaw  string
-		}{tokenState, dateTime, dateRaw}
+			HasNote  bool
+			NoteData template.HTML
+		}{tokenState, dateTime, dateRaw, noteExist, template.HTML(noteString)}
 
 		renderTemplate(w, r, name, data)
 
