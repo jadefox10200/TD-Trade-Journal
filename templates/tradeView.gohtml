@@ -21,7 +21,19 @@
 				</div>
 			</div>
 			<div class="twelve wide column">
-				<!-- PUT NOTES TEXTAREA HERE:  -->
+				<a id="addNote">Add Note</a>
+				<div id="noteTextContainer">
+					<textarea id="editor1" contenteditable="true"></textarea>
+					<div style="padding-top: 15px;">
+						<button id="saveBtn" class="mini ui button basic green">Save</button>
+						<button id="cancelBtn" class="mini ui button basic red">Cancel</button>
+					</div>
+				</div>
+				<div id="noteContainer">
+					<h2>Trade Notes:</h2>
+					<div id="noteStaticData">{{.NoteData}}</div>
+					<div style="padding-top: 15px;"><button class='mini ui button basic blue' id='editBtn'>Edit Note</button></div>
+				</div>
 			</div>
 		</div>
 
@@ -70,8 +82,73 @@
 
 	$( document ).ready(function() {
 
-		// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
+		//NOTES FUNCTIONS:
+		{{if .HasNote}}
+			console.log("hasNote")
+			$("#addNote").css('display', 'none')
+			$("#noteContainer").css('display', 'inline');
+			$("#editor1").html({{.NoteData}});
+			// CKEDITOR.instances['editor1'].setData({{.NoteData}})
 
+			$("#cancelBtn").on('click', function() {
+				$("#noteTextContainer").css('display', 'none')
+				$("#noteContainer").css('display', 'inline');
+			})
+
+			$("#editBtn").on('click', function() {
+				$("#noteContainer").css('display', 'none')
+				$("#noteTextContainer").css('display', 'inline');
+			})
+
+		{{else}}
+			console.log("didn't Find note")
+			$("#addNote").on('click', function() {
+				$(this).css('display', 'none');
+				$("#noteTextContainer").css('display', 'inline');
+
+			})
+
+			$("#cancelBtn").on('click', function() {
+				$("#addNote").css('display', 'inline')
+				$("#noteTextContainer").css('display', 'none');
+			})
+
+		{{end}}
+
+		$( '#editor1' ).ckeditor({
+			uiColor: '#14B8C4',
+			height: 150
+			// toolbar: [
+			// 	[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+			// 	[ 'FontSize', 'TextColor', 'BGColor' ]
+			// ]
+		});
+
+		$("#saveBtn").on('click', function() {
+			var data = $("#editor1").val();
+			var obj = {
+				Id: {{ .ID}},
+				NoteData: data
+			}
+			$.ajax({
+				type: "POST",
+			  url: "/saveTradeNote",
+			  data: obj
+			})
+			// '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
+			.done(function(data) {
+				var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+				window.location.href = "/tpl/tradeView?id="+ {{.ID}} +""
+			})
+			.fail(function(data) {
+				alert(data.responseText)
+			});
+
+			//when we save, just reload the damn page...
+
+		})
+
+		//SELECT BOX FOR DAILY CHART
 		$("select").change(function () {
 		    var str = "";
 		    $( "select option:selected" ).each(function() {
@@ -81,6 +158,7 @@
 		    });
 	  	})
 
+		//UPDATING THE CHARTS.
 		$("#download").on('click', function(){
 			var urlString = "/downloadCharts?"
 			urlString += "symbol=" + {{ .Symbol}} + "&"
@@ -103,6 +181,7 @@
 			});
 		});
 
+		//DRAWING THE ENTRY AND EXIT CHARTS:
 		function chart(symbol, csvPath, fullWidth, fullHeight) {
 			 var margin = {top: 20, right: 30, bottom: 30, left: 30},
 					 width = fullWidth - margin.left - margin.right,
@@ -328,7 +407,7 @@
 		}
 
 
-
+		//DRAWING THE MAIN DAILY CAHRT:
 		function dailyChart(symbol, csvPath, chartTimeFrame) {
 			var margin = {top: 20, right: 20, bottom: 30, left: 50},
 		            width = 960 - margin.left - margin.right,
@@ -428,6 +507,7 @@
 		        data = data.map(function(d) {
 		            return {
 						//This is dumb. We are adding time to offset the utc time to be inside the same day when it's converted. TD AMERITRADE GIVES US THE TIME AS 06:00 SO WHEN CONVERTED, IT DROPS BACK TO THE PREVIOUS DAY AT 22:00, TRUNCATES AND THEN DISPLAYS 1 DAY OFFSET...
+
 		                date: parseDate(moment.utc((parseInt(d.Datetime, 10))+ 10000000).local().format('D-MMM-YY')),
 		                open: +d.Open,
 		                high: +d.High,
@@ -436,7 +516,6 @@
 		                volume: +d.Volume
 		            };
 		        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
-
 				//cut down the data to the time frame we want if needed. Raw data should be 1 year worth:
 				data = data.slice(data.length - (data.length/chartTimeFrame), data.length)
 
@@ -557,6 +636,7 @@
 			}
 		}
 
+		//CALLS TO DRAW THE CHARTS:
 		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"
 		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv"
 		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
@@ -567,7 +647,7 @@
 		 //1 = 1 year
 		 //2 = 6 months
 		 //4 = 3 months
-		dailyChart("Year", dailyPath, 4);
+		dailyChart("Year", entryPath, 4);
 		 // chart("Apple, Inc.", "AAPL", 300, 200);
 
 

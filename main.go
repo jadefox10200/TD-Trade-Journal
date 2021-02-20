@@ -26,11 +26,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
+//TODO: ADD NOTES TO TRADES
+//TODO: ADD TAGGING TO TRADES
+//TODO: UPGRADE DAILY CHART VIEW IN TRADEVIEW
+
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 //TODO: SHOW SWING TRADES ON MONTHLY CALENDAR.... MAYBE.
 //TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES.
 //TODO: ADD TAGGING.
+//TODO: ADD FIELD TO TRADEVIEW THAT SHOWS HOW MUCH CAPITAL WAS USED FOR A TRADE.
+
+//TODO: CACHE SETTINGS WHEN UPDATING CHART.
+//TODO: ENABLE ABILITY TO LOGOUT...
+//TODO: CREATE JOINS IN SQL TO PULL NOTES DATA RATHER THAN RUNNING MULTIPLE QUIERIES...
+//TODO: HOME PAGE TO SHOW OPEN POSITIONS AND LATEST ACCT BALANCE.
 
 type DbDao struct {
 	db *sql.DB
@@ -102,6 +112,7 @@ func main() {
 	http.HandleFunc("/getTrades", handlers.GetTrades)
 	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
 	http.HandleFunc("/saveNoteDay", SaveNoteDay)
+	http.HandleFunc("/saveTradeNote", SaveTradeNote)
 
 	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
 	http.HandleFunc("/downloadCharts", handlers.DownloadCharts)
@@ -121,9 +132,45 @@ func main() {
 }
 
 type Note struct {
-	Id       int
+	Id       int    `schema:Id`
 	NoteDate string `schema:"NoteDate"`
 	NoteData string `schema:"NoteData"`
+}
+
+func SaveTradeNote(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	note := new(Note)
+	decoder := schema.NewDecoder()
+	err := decoder.Decode(note, r.PostForm)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse form: %s\n", err.Error()), 500)
+		return
+	}
+
+	var noteExist bool
+	err = db.db.QueryRow("select exists (select * from tradeNoteTable where tradeid = ?)", note.Id).Scan(&noteExist)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to check for dateRow: %s\n", err.Error()), 500)
+		return
+	}
+
+	//If we already have a not logged for this day we need to do an update. Only one note per day allows.
+	//DB is set to unique date field to prevent duplicate entries.
+	var queryString string
+	if noteExist {
+		queryString = "UPDATE tradeNoteTable SET noteData = ? where tradeId = ?"
+	} else {
+		queryString = "INSERT INTO tradeNoteTable(noteData, tradeId) VALUES (?,?)"
+	}
+
+	_, err = db.db.Exec(queryString, note.NoteData, note.Id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to set note data: %s\n", err.Error()), 500)
+		return
+	}
+
+	return
 }
 
 func SaveNoteDay(w http.ResponseWriter, r *http.Request) {
@@ -206,15 +253,16 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 	var exhours = false
 
 	//TODO:
-	//we in theory shouldcheck to make sure our trade is within the correct date frame. However, this would only
+	//1)We in theory shouldcheck to make sure our trade is within the correct date frame. However, this would only
 	//cause an issue if we were pulling really old data.
+	//2)We assume we always want the latest data. Not sure why, but TD Ameritrade doesn't assume that. So we must set the endDate for right now so we get the latest data. In practice, when pulling a chart on the 19th of Feb 2021, the last cnadle we are getting is 17 Feb 2021. This is odd but when setting the endDate, we are then able to get the data from the 18th. The chart was pulled at 15:18 PST so assume that we can't pull the 19th data until the end of the day.
 	optsD := tdameritrade.PriceHistoryOptions{
 		PeriodType:            "year",
 		FrequencyType:         "daily",
 		Frequency:             1,
 		NeedExtendedHoursData: &exhours,
 		// StartDate:             tdameritrade.ConvertToEpoch(roundedStart),
-		// EndDate:               tdameritrade.ConvertToEpoch(roundedEnd),
+		EndDate: tdameritrade.ConvertToEpoch(time.Now()),
 	}
 	//TODO: NEED TO CHECK IF OUR TRADE WAS DONE OUTSIDE REGULAR MARKET HOURS.
 	if timeStart.Before(marketOpenTimeStart) || timeStart.After(marketCloseTimeStart) {
@@ -1269,7 +1317,9 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 
 func (h *TDHandlers) Index(w http.ResponseWriter, req *http.Request) {
 
-	renderTemplate(w, req, "home", nil)
+	http.Redirect(w, req, "/tpl/home", 302)
+	return
+	// renderTemplate(w, req, "home", nil)
 
 }
 
@@ -1480,6 +1530,8 @@ type TradeViewData struct {
 	ProfitLoss  float64
 	Callback    string
 	Executions  []TradeOrder
+	HasNote     bool
+	NoteData    template.HTML
 }
 
 func timeToPST(t time.Time) time.Time {
@@ -1567,6 +1619,25 @@ func RenderTradeDetail(w http.ResponseWriter, r *http.Request, tokenState bool) 
 		to.OrderDate = tmpTime.Format(tableTimeFormat)
 		tvd.Executions = append(tvd.Executions, to)
 	}
+
+	//GET THE NOTES FOR THE TRADE:
+	queryCheck := "select * from tradeNoteTable where tradeId = ?"
+	noteExist, err := DBDataExist(queryCheck, tvd.ID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get tradeNoteTable: %s", err.Error()), 500)
+		return
+	}
+	var noteData string
+	if noteExist {
+		err := db.db.QueryRow("select noteData from tradeNoteTable where tradeId = ?", tvd.ID).Scan(&noteData)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get row from tradeNoteTable: %s", err.Error()), 500)
+			return
+		}
+	}
+
+	tvd.HasNote = noteExist
+	tvd.NoteData = template.HTML(noteData)
 	name := "tradeView"
 	renderTemplate(w, r, name, tvd)
 
@@ -1649,6 +1720,18 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, r, name, data)
 
 	return
+}
+
+func DBDataExist(query string, arg ...interface{}) (bool, error) {
+	var exist bool
+	existQuery := fmt.Sprintf("select exists (%s)", query)
+
+	err := db.db.QueryRow(existQuery, arg...).Scan(&exist)
+	if err != nil {
+		return exist, fmt.Errorf("Failed to check for data row: %s\n", err.Error())
+	}
+
+	return exist, nil
 }
 
 func testFunc(chartStart string, chartEnd string, tradeDate string) bool {

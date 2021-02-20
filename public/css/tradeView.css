@@ -4,6 +4,21 @@
 	margin: auto;
 }
 
+/* notes css */
+a:hover {
+	cursor: pointer;
+}
+
+#noteTextContainer {
+	display: none;
+}
+
+
+#noteContainer {
+	display: none;
+}
+
+/* charts css */
 .title_collection {
 	font-size: 14px;
 }
