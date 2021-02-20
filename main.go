@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,21 +27,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
-//TODO: ADD NOTES TO TRADES
 //TODO: ADD TAGGING TO TRADES
 //TODO: UPGRADE DAILY CHART VIEW IN TRADEVIEW
 
 //TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 //TODO: SHOW SWING TRADES ON MONTHLY CALENDAR.... MAYBE.
-//TODO: BUILD FEATURE FOR ADDING NOTES TO TRADES.
 //TODO: ADD TAGGING.
 //TODO: ADD FIELD TO TRADEVIEW THAT SHOWS HOW MUCH CAPITAL WAS USED FOR A TRADE.
 
 //TODO: CACHE SETTINGS WHEN UPDATING CHART.
 //TODO: ENABLE ABILITY TO LOGOUT...
 //TODO: CREATE JOINS IN SQL TO PULL NOTES DATA RATHER THAN RUNNING MULTIPLE QUIERIES...
-//TODO: HOME PAGE TO SHOW OPEN POSITIONS AND LATEST ACCT BALANCE.
+//TODO: HOME PAGE TO SHOW OPEN POSITIONS AND LATEST ACCT BALANCE. AND JOURNAL
+
+//BUG: FIX VOLUME FOR EACH DAY. MIGHT HAVE TO GO BACK TO PULLING TRANSACTIONS OR JUST PULLING TRANSACTIONS BASED ON THE TRADEID LINKED TO THE DAY.
 
 type DbDao struct {
 	db *sql.DB
@@ -1647,6 +1648,161 @@ func RenderTradeDetail(w http.ResponseWriter, r *http.Request, tokenState bool) 
 const UTCTimeFormat = "2006-01-02T15:04:05-0700"
 const tableTimeFormat = "02-01-2006 15:04:05"
 
+type JournalDay struct {
+	DateRaw      string
+	Date         string
+	TradeCount   int
+	SharesTraded int
+	ClosedGross  float64
+	Trades       []Trade
+	HasNote      bool
+	NoteData     template.HTML
+}
+
+func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
+
+	positions, err := GetOpenPositions()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get Open Positions: %s\n", err.Error()), 500)
+		return
+	}
+
+	//get the dates for the journal:
+	//if we knew sql a bit better, we could probably run only 1 query....
+	getDaysQuery := "select DATE_FORMAT(TransactionDate, '%Y-%m-%d') as date from tradeTransactions group by date order by date desc LIMIT 30;"
+	dateRows, err := db.db.Query(getDaysQuery)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get days for journal: %s\n", err.Error()), 500)
+		return
+	}
+
+	defer dateRows.Close()
+
+	var days = make([]JournalDay, 0)
+
+	for dateRows.Next() {
+		var jd = JournalDay{}
+		err = dateRows.Scan(&jd.DateRaw)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan dateRaw: %s\n", err.Error()), 500)
+			return
+		}
+
+		parsedDate, err := time.Parse("2006-01-02", jd.DateRaw)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse date from DB: %s", err.Error()), 500)
+			return
+		}
+		jd.Date = parsedDate.Format("Mon, 2 Jan 2006")
+
+		queryString := fmt.Sprintf("select * from (select tradeId, symbol, 0 as 'profitLoss', FLOOR(amount) as amount, price as entryPrice, 0 as exitPrice, transactionDate, 'OPENED' as closeDate, instruction as TradeType, price as avgEntryPrice, 0 as avgExitPrice, 0 as 'percentGain', sum(1) as executions from tradeTransactions where tradeId not in (select ID from tradeHistory where closeDate like '%s%%') and transactionDate like '%s%%' group by symbol union select ID, symbol, profitLoss, quantity, entryPrice, exitPrice, openDate, closeDate, tradeType, avgEntryPrice, avgExitPrice, percentGain, executions from tradeHistory where closeDate like '%s%%') as trades;", jd.DateRaw, jd.DateRaw, jd.DateRaw)
+		rows, err := db.db.Query(queryString)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var t = Trade{}
+			err := rows.Scan(&t.ID, &t.Symbol, &t.ProfitLoss, &t.Quantity, &t.EntryPrice, &t.ExitPrice, &t.OpenDate, &t.CloseDate, &t.TradeType, &t.AvgEntryPrice, &t.AvgExitPrice, &t.PercentGain, &t.Executions)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to scan rows: %s", err.Error()), 500)
+				return
+			}
+
+			jd.TradeCount += 1
+			jd.SharesTraded += t.Quantity
+			jd.ClosedGross += t.ProfitLoss
+
+			openDate, err := time.Parse("2006-01-02T15:04:05-0700", t.OpenDate)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed parse time: %s", err.Error()), 400)
+				return
+			}
+
+			openDate = timeToPST(openDate)
+			t.OpenDate = openDate.Format(tableTimeFormat)
+
+			if t.CloseDate == "OPENED" {
+				jd.Trades = append(jd.Trades, t)
+			} else {
+				closeDate, err := time.Parse("2006-01-02T15:04:05-0700", t.CloseDate)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed parse time: %s", err.Error()), 400)
+					return
+				}
+
+				closeDate = timeToPST(closeDate)
+				t.CloseDate = closeDate.Format(tableTimeFormat)
+				jd.Trades = append(jd.Trades, t)
+			}
+
+		}
+
+		var noteExist bool
+		err = db.db.QueryRow("select exists (select * from notesDayTable where date = ?)", jd.DateRaw).Scan(&noteExist)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to check for dateRow: %s\n", err.Error()), 500)
+			return
+		}
+
+		var noteString string
+		if noteExist {
+			queryString := `select noteData from notesDayTable where date = ?`
+			err = db.db.QueryRow(queryString, jd.DateRaw).Scan(&noteString)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to get note: %s\n", err.Error()), 500)
+				return
+			}
+		}
+
+		//put data into JournalDay:
+		jd.HasNote = noteExist
+		jd.NoteData = template.HTML(noteString)
+
+		days = append(days, jd)
+	}
+
+	data := struct {
+		LoggedIn  bool
+		Positions []TransactionRow
+		Days      []JournalDay
+	}{tokenState, positions, days}
+
+	renderTemplate(w, r, "home", data)
+
+	return
+}
+
+func GetOpenPositions() ([]TransactionRow, error) {
+
+	bs, err := ioutil.ReadFile("sql/getOpenPositions.sql")
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open sql file: %s\n", err.Error())
+	}
+
+	queryString := string(bs)
+	rows, err := db.db.Query(queryString)
+	if err != nil {
+		return nil, fmt.Errorf("Error during query: %s\n")
+	}
+
+	tRows := make([]TransactionRow, 0)
+	for rows.Next() {
+		var t = TransactionRow{}
+		err := rows.Scan(&t.OrderID, &t.Type, &t.ClearingReferenceNumber, &t.SubAccount, &t.SettlementDate, &t.SMA, &t.RequirementReallocationAmount, &t.DayTradeBuyingPowerEffect, &t.NetAmount, &t.TransactionDate, &t.OrderDate, &t.TransactionSubType, &t.TransactionID, &t.CashBalanceEffectFlag, &t.Description, &t.ACHStatus, &t.AccruedInterest, &t.Fees, &t.AccountID, &t.Amount, &t.Price, &t.Cost, &t.ParentOrderKey, &t.ParentChildIndicator, &t.Instruction, &t.PositionEffect, &t.Symbol, &t.UnderlyingSymbol, &t.OptionExpirationDate, &t.OptionStrikePrice, &t.PutCall, &t.CUSIP, &t.InstrumentDescription, &t.AssetType, &t.BondMaturityDate, &t.BondInterestRate)
+
+		if err != nil {
+			return nil, fmt.Errorf("Failed to scan: %s", err.Error())
+		}
+
+		tRows = append(tRows, t)
+
+	}
+
+	return tRows, nil
+}
+
 //change this so it is simply a generic template loader:
 func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 
@@ -1661,6 +1817,11 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "tradeView" {
 		RenderTradeDetail(w, r, tokenState)
+		return
+	}
+
+	if name == "home" {
+		RenderHome(w, r, tokenState)
 		return
 	}
 
@@ -1734,19 +1895,15 @@ func DBDataExist(query string, arg ...interface{}) (bool, error) {
 	return exist, nil
 }
 
-func testFunc(chartStart string, chartEnd string, tradeDate string) bool {
+func Abs(cost float64) float64 {
 
-	fmt.Println(chartStart)
-	fmt.Println(chartEnd)
-	fmt.Println(tradeDate)
-
-	return true
+	return math.Abs(cost)
 }
 
 func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
 	// parse templates
 	tpl := template.New("").Funcs(template.FuncMap{
-		"testFunc": testFunc,
+		"abs": Abs,
 	})
 	tpl, err := tpl.ParseGlob("templates/*.gohtml")
 	if err != nil {

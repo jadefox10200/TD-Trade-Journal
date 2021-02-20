@@ -18,6 +18,15 @@
 					<li class="title_collection">Win/Loss Percent: <span id="percentGainSpace">{{ .PercentGain}}%</span></li>
 					<!-- ADD TITLE FOR MAX TRADE COST TO SHOW HOW MUCH CAPITAL WAS USED FOR THE TRADE -->
 					<!-- WE SHOULD ALSO KEEP TRACK OF THIS IN THE DATABASE FOR ANALYSIS REASONS. -->
+					<!-- TAGS -->
+					<span id="tagBoxList" style="display: none">
+						<span class="tagBoxItem">
+							<span class="tagBoxContent">
+								<a href="javascript:void(0)" class="tagBoxRemove">x</a>
+								{{ .Symbol}}
+							</span>
+						</span>
+					</span>
 				</div>
 			</div>
 			<div class="twelve wide column">
@@ -409,11 +418,13 @@
 
 		//DRAWING THE MAIN DAILY CAHRT:
 		function dailyChart(symbol, csvPath, chartTimeFrame) {
-			var margin = {top: 20, right: 20, bottom: 30, left: 50},
+			var margin = {top: 20, right: 50, bottom: 30, left: 50},
 		            width = 960 - margin.left - margin.right,
-		            height = 500 - margin.top - margin.bottom;
+		            height = 500 - margin.top - margin.bottom,
+					volumeHeight = height*.25;
 			// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
-			var dateFormat = d3.timeFormat("%d-%b-%y %H:%M:%S"),
+
+			var dateFormat = d3.timeFormat("%d-%b-%y"),
 				parseDate = d3.timeParse("%d-%b-%y"),
 		        // parseDate = d3.timeParse("%d-%b-%y"),
 		        valueFormat = d3.format(',.2f');
@@ -432,18 +443,39 @@
 		         .xScale(x)
 		         .yScale(y)
 		         .orient(function(d) { return d.type.startsWith("BUY") ? "up" : "down"; })
-		         // .on("mouseenter", enterArrow)
-		         // .on("mouseout", outArrow);
+		         .on("mouseenter", enterArrow)
+		         .on("mouseout", outArrow);
 
 		    var xAxis = d3.axisBottom()
 		            .scale(x);
 
 			var xTopAxis = d3.axisTop(x);
 
-		    var yRightAxis = d3.axisRight(y);
+		    // var yAxis = d3.axisLeft()
+		    //         .scale(y);
 
-		    var yAxis = d3.axisLeft()
-		            .scale(y);
+			var yAxis = d3.axisLeft(y);
+
+	    	var yRightAxis = d3.axisRight(y);
+
+			//volume:
+			var yVolume = d3.scaleLinear()
+					.range([height, height - volumeHeight]);
+			//volume:
+
+			var volume = techan.plot.volume()
+	            .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
+	            .xScale(x)
+	            .yScale(yVolume);
+
+			var volumeAxis = d3.axisLeft(yVolume)
+	            .ticks(4)
+	            .tickFormat(d3.format(",.3s"));
+
+		    var volumeAnnotation = techan.plot.axisannotation()
+		            .axis(volumeAxis)
+		            .orient("right")
+		            .width(35);
 
 		    var svg = d3.select("#dailyChart").append("svg")
 		            .attr("width", width + margin.left + margin.right)
@@ -455,20 +487,27 @@
 		        .style("text-anchor", "end")
 		        .attr("class", "coords")
 		        .attr("x", width - 5)
-		        .attr("y", 15);
+		        .attr("y", 5);
+
+			var tradeText = svg.append('text')
+		        .style("text-anchor", "end")
+		        .attr("class", "coords")
+		        .attr("x", width - 5)
+		        .attr("y", 25);
 
 			//cross:
 			var ohlcAnnotation = techan.plot.axisannotation()
 				.axis(yAxis)
 				.orient('left')
 				// .accessor(candlestick.accessor())
-				.format(d3.format(',.2f'))
+				.format(d3.format(',.2f'));
 				// .translate([x(1), 0]);
 
 			var ohlcRightAnnotation = techan.plot.axisannotation()
-		            .axis(yRightAxis)
-		            .orient('right')
-		            .translate([width, 0]);
+	            .axis(yRightAxis)
+	            .orient('right')
+				.format(d3.format(',.2f'))
+	            .translate([width, 0]);
 
 			var timeAnnotation = techan.plot.axisannotation()
 					.axis(xAxis)
@@ -485,19 +524,19 @@
 		         .xScale(x)
 		         .yScale(y)
 		         .xAnnotation([timeAnnotation, timeTopAnnotation])
-		         .yAnnotation([ohlcAnnotation, ohlcRightAnnotation])
+		         .yAnnotation([ohlcAnnotation, ohlcRightAnnotation, volumeAnnotation])
+				 // .yAnnotation([ohlcAnnotation, rightAnnotation, volumeAnnotation])
 		         .on("enter", enter)
 		         .on("out", out)
 		         .on("move", move);
 				//end cross
-
 
 			//trade arrow text?
 			var valueText = svg.append('text')
 		        .style("text-anchor", "end")
 		        .attr("class", "coords")
 		        .attr("x", width - 5)
-		        .attr("y", 15);
+		        .attr("y", 5);
 
 
 			var filePath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
@@ -522,6 +561,7 @@
 				//cross
 				x.domain(data.map(accessor.d));
 				y.domain(techan.scale.plot.ohlc(data, accessor).domain());
+				yVolume.domain(techan.scale.plot.volume(data).domain());
 
 				//trade arrows:
 				var trades = [
@@ -539,23 +579,32 @@
 		        svg.append("g")
 		                .attr("class", "candlestick");
 
-				//trade arrow class:
+				//volume:
 				svg.append("g")
-		                .attr("class", "tradearrow");
+   					 .attr("class", "volume axis");
 
 		        svg.append("g")
 		                .attr("class", "x axis")
 		                .attr("transform", "translate(0," + height + ")");
 
 				//Putting the price at the top left. Doesn't work well.
-		        svg.append("g")
-		                .attr("class", "y axis")
-		                .append("text")
-		                .attr("transform", "rotate(-90)")
-		                .attr("y", 6)
-		                .attr("dy", ".71em")
-		                .style("text-anchor", "end")
-		                // .text("Price ($)");
+		        // svg.append("g")
+		        //         .attr("class", "y axis")
+		        //         .append("text")
+		        //         .attr("transform", "rotate(-90)")
+		        //         .attr("y", 6)
+		        //         .attr("dy", ".71em")
+		        //         .style("text-anchor", "end")
+		        //         // .text("Price ($)");
+
+				svg.append("g")
+                  .attr("class", "y axis")
+                  .call(yAxis);
+
+				svg.append("g")
+	                .attr("class", "y right axis")
+	                .attr("transform", "translate(" + width + ",0)")
+	                .call(yRightAxis);
 
 
 				{{range .Executions}}
@@ -573,10 +622,10 @@
 		        //         .datum([{value: 85}]) // 74 should not be rendered
 		        //         .call(ohlcAnnotation);
 
-		        svg.append("g")
-		                .attr("class", "x annotation bottom")
-		                .datum([{value: x.domain()[30]}])
-		                .call(timeAnnotation);
+		        // svg.append("g")
+		        //         .attr("class", "x annotation bottom")
+		        //         .datum([{value: x.domain()[30]}])
+		        //         .call(timeAnnotation);
 
 				svg.append('g')
 		                .attr("class", "crosshair")
@@ -584,10 +633,22 @@
 		                .call(crosshair)
 		                .each(function(d) { move(d); }); // Display the current data
 
+				// svg.append("g")
+	            //     .attr("class", "y annotation right")
+	            //     .datum([{value: 61}, {value:52}])
+	            //     .call(ohlcRightAnnotation);
+
 		        svg.append('text')
 		                .attr("x", 5)
 		                .attr("y", 15)
 		                .text("(" + {{ .Symbol}} +")");
+
+				svg.append("g")
+		                .attr("class", "tradearrow");
+
+				svg.select("g.candlestick").datum(data).call(candlestick);
+				svg.select("g.volume").datum(data).call(volume);
+				//trade arrow class:
 
 		        // Data to display initially
 		        draw(data, trades);
@@ -601,21 +662,25 @@
 		        y.domain(techan.scale.plot.ohlc(data, candlestick.accessor()).domain());
 
 		        svg.selectAll("g.candlestick").datum(data).call(candlestick);
+				// svg.selectAll("g.volume").datum(data).call(volume);
+				svg.selectAll("g.volume.axis").call(volumeAxis);
 				//added trade arrows:
 				svg.selectAll("g.tradearrow").datum(trades).call(tradearrow);
 		        svg.selectAll("g.x.axis").call(xAxis);
 		        svg.selectAll("g.y.axis").call(yAxis);
+				svg.selectAll("g.y.right.axis").call(yRightAxis);
 				// svg.selectAll("g.y.annotation.left").datum(leftData).call(ohlcAnnotation);
 		    }
 
-			// function enterArrow(d) {
-			// 	valueText.style("display", "inline");
-			// 	refreshText(d);
-			// }
-			//
-			// function outArrow() {
-			// 	valueText.style("display", "none");
-			// }
+			function enterArrow(d) {
+				console.log("entered")
+				valueText.style("display", "inline");
+				refreshText(d);
+			}
+
+			function outArrow() {
+				valueText.style("display", "none");
+			}
 
 			function refreshText(d) {
 				valueText.text("Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price));
@@ -635,6 +700,8 @@
 				);
 			}
 		}
+
+
 
 		//CALLS TO DRAW THE CHARTS:
 		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"

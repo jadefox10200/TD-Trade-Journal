@@ -3,6 +3,40 @@
 	width: 80%;
 	margin: auto;
 }
+/*  tags css*/
+span.tagBoxItem{
+	display: inline-block;
+	margin: 0.3em 0.25em 0.15em;
+	cursor: default;
+	white-space: normal;
+}
+
+span.tagBoxContent {
+	display: inline-block;
+	border-radius: 3px;
+	background-color: #3a87ad;
+	padding: 2px 4px;
+	font-size: 10.998px;
+	font-weight: bold;
+	line-height: 14px;
+	color: #fff;
+	vertical-align: baseline;
+	white-space: nowrap;
+	text-shadow: 0 -1px 0 rgb(0 0 0 / 25%);
+}
+
+a.tagBoxRemove {
+	font-family: Arial;
+	text-decoration: none;
+	display: inline-block;
+	float: right;
+	padding-left: 4px;
+	font-size: 16px;
+	font-weight: bold;
+	color: #000000;
+	text-shadow: 0 1px 0 #ffffff;
+	opacity: 0.3;
+}
 
 /* notes css */
 a:hover {
@@ -59,9 +93,18 @@ a:hover {
         stroke: #FF0000;
     }
 
-    path.volume {
-        fill: #DDDDDD;
-    }
+	path.volume {
+		fill: #AAAAAA;
+		opacity: 0.5;
+	}
+
+	path.volume.up {
+		fill: #00AA00;
+	}
+
+	path.volume.down {
+		fill: #FF0000;
+	}
 
     rect.pane {
         cursor: move;
@@ -76,11 +119,11 @@ a:hover {
 
 	/* trade arrows: */
 	.tradearrow {
-		z-index: -1;
+		z-index: 1;
 	}
 
 	.data {
-		z-index: -1;
+		/* z-index: -1; */
 	}
 
 	path.tradearrow {
