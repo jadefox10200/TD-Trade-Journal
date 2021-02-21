@@ -9,6 +9,19 @@
 	box-sizing: border-box;
 }*/
 
+/*  applies to home.gohtml & dayView.gohtml */
+#playAV {
+	background: dodgerblue;
+	border-radius: 5px;
+	padding: 5px;
+	color: #333;
+}
+
+/*  applies to home.gohtml & dayView.gohtml */
+#AVcontainer {
+	margin: 15px;
+}
+
 body {
     margin: auto;
 	margin-top: 30px;
@@ -26,6 +39,15 @@ body, input, textarea
 body
 {
 	font-size: 75%;
+}
+
+a.header:hover {
+	text-decoration: none;
+	color: darkred;
+}
+
+.angle.right.icon {
+	visibility: hidden;
 }
 
 nav ul, footer ul {

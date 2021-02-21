@@ -17,6 +17,11 @@
 								<li class="title_collection">Total volume: <span id="numSharesSpan">{{.SharesTraded}}</span></li>
 								<li class="title_collection">Closed P&L: <span id="closedValueSpan">{{.ClosedGross}}</span></li>
 							</div>
+							{{if .HasVideo}}
+							<div class="ui container" id="AVcontainer">
+								<button class="ui button basic" href={{printf "/AV/%s.mp4" .DateRaw}} TARGET=QUICKTIMEPLAYER.app><i class="play circle icon"></i>Play Recording</button>
+							</div>
+							{{end}}
 						</div>
 						<div class="ten wide column">
 							{{if .HasNote}}
@@ -52,31 +57,86 @@
 						{{end}}
 					</tbody>
 				</table>
-
 			</div>
 			{{end}}
 
 		</div>
 		<div class="right floated four wide column">
-			<h2> Open Positions</h2>
-			<table class="ui fixed single line celled table sortable">
-				<thead>
-					<th>Symbol</th>
-					<th>Shares</th>
-					<th>Avg Price</th>
-					<th>Cost</th>
-				</thead>
-				<tbody>
-					{{range .Positions}}
-						<tr>
-							<td>{{.Symbol}}</td>
-							<td>{{.Amount}}</td>
-							<td>{{.Price}}</td>
-							<td>{{abs .Cost}}</td>
-						</tr>
-					{{end}}
-				</tbody>
-			</table>
+			<div class="ui container rightContainer">
+				<h2> Open Positions</h2>
+				<table class="ui fixed single line celled table sortable">
+					<thead>
+						<th>Symbol</th>
+						<th>Shares</th>
+						<th>Avg Price</th>
+						<th>Cost</th>
+					</thead>
+					<tbody>
+						{{range .Positions}}
+							<tr>
+								<td>{{.Symbol}}</td>
+								<td>{{.Amount}}</td>
+								<td>{{.Price}}</td>
+								<td>{{abs .Cost}}</td>
+							</tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+			<div class="ui container rightContainer">
+				<h2><span> {{.Stats.Date}} Stats:</h2>
+
+				<div class="ui list divided" style="width: 90%;">
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>GI:
+						</span>
+						<span class="statData">${{.Stats.Gi}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Trades:
+  						</span>
+						<span class="statData">{{ .Stats.Trades}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle  icon"></i>Average Profit/Loss: $
+						</span>
+						<span class="statData">{{.Stats.AvgProfit}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Average Percent:
+						</span>
+						<span class="statData">{{.Stats.AvgPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Win Percent:
+						</span>
+						<span class="statData">{{MultPercent .Stats.WinPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Loss Percent:
+						</span>
+						<span class="statData">{{MultPercent .Stats.LossPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Best Winner:
+						</span>
+						<span class="statData">${{ .Stats.BigWinner}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Worst Loser:
+						</span>
+						<span class="statData">${{.Stats.BigLoser}}</span>
+					</div>
+				</div>
+			</div>
 		</div>
 
 
@@ -85,8 +145,8 @@
 <script>
 
 	$( document ).ready( function() {
+		$("#homeIcon").css("visibility", "visible")
 		$(".dayHeader").each(function() {
-			console.log("ran")
 			var profit = $(this).attr("profit")
 			if (profit > 0) {
 				$(this).addClass("green")

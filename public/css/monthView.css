@@ -1,9 +1,25 @@
 #calendar {
   max-width: 1100px;
   margin: 0 auto;
+  margin-top: -30px;
 }
 
 .group-header {
 	background-color:#BDE7F7;
 	padding-left: 5px !important;
 }
+
+.fc-event-title {
+	font-size: 2em;
+
+}
+
+.fc-event-title-container {
+	text-align: center;
+	height: 50px;
+	padding-top: 20px;
+}
+
+/* // $(".").css("font-weight","Bold")
+// $(".fc-event-title").css("color","#333")
+// $(".fc-event-title").css("font-size","2em") */

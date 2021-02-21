@@ -4,18 +4,20 @@
 		<ul>
 			<li style="position: absolute; margin-top: -25px;"><img src="/public/img/siteLogo.jpg" width="108px" height="108px"/></li>
 
-			<li style="margin-left: 130px;"><a href="/">Home</a></li>
+			<li style="margin-left: 130px;">
+				<i id="homeIcon" class="angle right icon"></i>
+				<a href="/" class="header" id="homeHeader">Home</a>
+			</li>
 
-
-			<li><a href="/tpl/dayView">Day View</a></li>
-			<li><a href="/tpl/monthView">Month View</a></li>
-			<li><a href="/tpl/tradeBuilder">Trade Table</a></li>
-			<li><a href="/tpl/importTrades">Import Transactions</a></li>
+			<li><i id="dayIcon" class="angle right icon"></i><a href="/tpl/dayView" class="header">Day View</a></li>
+			<li><i id="monthIcon" class="angle right icon"></i><a href="/tpl/monthView" class="header">Month View</a></li>
+			<li><i id="tradeIcon" class="angle right icon"></i><a href="/tpl/tradeBuilder" class="header">Trade Table</a></li>
+			<li><i id="importIcon" class="angle right icon"></i><a href="/tpl/importTrades" class="header">Import Transactions</a></li>
 
 			{{if .LoggedIn}}
-			<li><a href="/logout">Log Out</a></li>
+			<li><span class="header">Status: Online</span></li>
 			{{else}}
-			<li><a href="/authenticate">Log In</a></li>
+			<li><a href="/authenticate" class="header">Log In</a></li>
 			{{end}}
 
 

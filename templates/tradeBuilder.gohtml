@@ -29,6 +29,7 @@
 <!-- </div> -->
 <script>
 	$( document ).ready(function() {
+		$("#tradeIcon").css("visibility", "visible")
 		var url = "/getTrades"
 		var callback = $(location).attr('href');
 		$.getJSON(url, function(dataSet, status){

@@ -28,9 +28,8 @@ import (
 )
 
 //TODO: ADD TAGGING TO TRADES
-//TODO: UPGRADE DAILY CHART VIEW IN TRADEVIEW
+//TODO: UPGRADE DAILY CHART VIEW IN TRADEVIEW..
 
-//TODO: FIX LOGGED IN STATUS IN THE RENDERTEMPLTE() FUNCTION.
 //TODO: FIX MONTH VIEW SO WHEN CLICKING BACK, IT TAKES YOU TO THE MONTH YOU WERE LAST LOOKING AT.
 //TODO: SHOW SWING TRADES ON MONTHLY CALENDAR.... MAYBE.
 //TODO: ADD TAGGING.
@@ -39,7 +38,6 @@ import (
 //TODO: CACHE SETTINGS WHEN UPDATING CHART.
 //TODO: ENABLE ABILITY TO LOGOUT...
 //TODO: CREATE JOINS IN SQL TO PULL NOTES DATA RATHER THAN RUNNING MULTIPLE QUIERIES...
-//TODO: HOME PAGE TO SHOW OPEN POSITIONS AND LATEST ACCT BALANCE. AND JOURNAL
 
 //BUG: FIX VOLUME FOR EACH DAY. MIGHT HAVE TO GO BACK TO PULLING TRANSACTIONS OR JUST PULLING TRANSACTIONS BASED ON THE TRADEID LINKED TO THE DAY.
 
@@ -126,6 +124,7 @@ func main() {
 	//SERVE THE PUBLIC FOLDER
 	http.Handle("/public/", http.StripPrefix("/public", http.FileServer(http.Dir("public/"))))
 	http.Handle("/charts/", http.StripPrefix("/charts", http.FileServer(http.Dir("charts/"))))
+	http.Handle("/AV/", http.StripPrefix("/AV", http.FileServer(http.Dir("AV/"))))
 
 	http.HandleFunc("/", handlers.Index)
 
@@ -1500,13 +1499,13 @@ func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var e = Event{}
-		e.Display = "background"
+		// e.Display = "background"
 		err := rows.Scan(&e.Title, &e.Date)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to scan rows: %s", err.Error()), 500)
 			return
 		}
-
+		e.Title = fmt.Sprintf("$%s", e.Title)
 		events = append(events, e)
 	}
 
@@ -1657,6 +1656,11 @@ type JournalDay struct {
 	Trades       []Trade
 	HasNote      bool
 	NoteData     template.HTML
+	HasVideo     bool
+}
+
+func MultPercent(percent float64) string {
+	return fmt.Sprintf("%.2f", percent*100)
 }
 
 func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
@@ -1666,6 +1670,38 @@ func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
 		http.Error(w, fmt.Sprintf("Failed to get Open Positions: %s\n", err.Error()), 500)
 		return
 	}
+
+	var sr = struct {
+		Date        string
+		Trades      int
+		AvgProfit   float64
+		AvgPercent  float64
+		Gi          float64
+		WinPercent  float64
+		LossPercent float64
+		BigWinner   float64
+		BigLoser    float64
+	}{"", 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+
+	bs, err := ioutil.ReadFile("sql/getThisMonthStats.sql")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read file getThisMonthStats.sql: %s", err.Error()), 500)
+		return
+	}
+
+	err = db.db.QueryRow(string(bs)).Scan(&sr.Date, &sr.Trades, &sr.AvgProfit, &sr.AvgPercent, &sr.Gi, &sr.WinPercent, &sr.LossPercent, &sr.BigWinner, &sr.BigLoser)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to scan statRow for the month: %s", err.Error()), 500)
+		return
+	}
+
+	t, err := time.Parse("2006-01-02", sr.Date)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse date from DB: %s", err.Error()), 500)
+		return
+	}
+
+	sr.Date = t.Format("January 2006")
 
 	//get the dates for the journal:
 	//if we knew sql a bit better, we could probably run only 1 query....
@@ -1760,6 +1796,12 @@ func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
 		jd.HasNote = noteExist
 		jd.NoteData = template.HTML(noteString)
 
+		var videoExist bool = true
+		videoFileName := fmt.Sprintf("AV/%s.mp4", jd.DateRaw)
+		if _, err := os.Stat(videoFileName); os.IsNotExist(err) {
+			videoExist = false
+		}
+		jd.HasVideo = videoExist
 		days = append(days, jd)
 	}
 
@@ -1767,7 +1809,8 @@ func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
 		LoggedIn  bool
 		Positions []TransactionRow
 		Days      []JournalDay
-	}{tokenState, positions, days}
+		Stats     interface{}
+	}{tokenState, positions, days, sr}
 
 	renderTemplate(w, r, "home", data)
 
@@ -1844,6 +1887,13 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
+		var videoExist bool = true
+		videoFileName := fmt.Sprintf("AV/%s.mp4", dateRaw)
+		if _, err := os.Stat(videoFileName); os.IsNotExist(err) {
+			videoExist = false
+		}
+
 		var noteExist bool
 		err = db.db.QueryRow("select exists (select * from notesDayTable where date = ?)", dateRaw).Scan(&noteExist)
 		if err != nil {
@@ -1867,7 +1917,8 @@ func (h *TDHandlers) Templates(w http.ResponseWriter, r *http.Request) {
 			DateRaw  string
 			HasNote  bool
 			NoteData template.HTML
-		}{tokenState, dateTime, dateRaw, noteExist, template.HTML(noteString)}
+			HasVideo bool
+		}{tokenState, dateTime, dateRaw, noteExist, template.HTML(noteString), videoExist}
 
 		renderTemplate(w, r, name, data)
 
@@ -1903,7 +1954,8 @@ func Abs(cost float64) float64 {
 func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
 	// parse templates
 	tpl := template.New("").Funcs(template.FuncMap{
-		"abs": Abs,
+		"abs":         Abs,
+		"MultPercent": MultPercent,
 	})
 	tpl, err := tpl.ParseGlob("templates/*.gohtml")
 	if err != nil {
