@@ -61,7 +61,7 @@ trades today in 2021 for example, you won't be able to view intraday charts for
 trades done in 2020. But you will at least still get the 3 month, 6 month and
 yearly chart view.
 
-(/pics/importPage.png)
+![Import Page](/importPage.png)
 
 Also, the application supports mp4 daily trade review. To implement this, create
 a folder in the main directory name 'AV'. In that folder you can have one video
@@ -78,9 +78,8 @@ I built it for my own use. Therefore this app is AS IS. Use it at your own risk.
 
 With that being said, here are some pics of the app in use should you make it this far: 
 
-(/pics/dayPage.png)
-(/pics/homePage.png)
-(/pics/importPage.png)
-(/pics/monthPage.png)
-(/pics/tablePage.png)
-(/pics/videoPage.png)
+![Home Page](/homePage.png)
+![Daily View Page](/dayPage.png)
+![Calendar View](/monthPage.png)
+![Trade Table](/tablePage.png)
+![Video](/videoPage.png)
