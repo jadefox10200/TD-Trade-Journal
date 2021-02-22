@@ -12,7 +12,6 @@
 *.txt
 
 #Ignore assets:
-assets
 charts
 
 #Ignore DS_Store:
