@@ -1,0 +1,22 @@
+# Ignore all
+*
+
+# Unignore all with extensions
+!*.*
+
+# Unignore all dirs
+!*/
+
+#Ignore all text files.
+*/*.txt
+*.txt
+
+#Ignore assets:
+charts
+
+#Ignore DS_Store:
+*/.DS_Store
+.DS_Store
+
+archive/
+AV/*

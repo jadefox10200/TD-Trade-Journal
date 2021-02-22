@@ -1,0 +1,26 @@
+
+input {
+	width : 200px;
+}
+
+#mainContainer {
+	width: 80%;
+	margin: auto;
+
+}
+
+/* #transactionBody {
+	overflow-y: scroll;
+	min-height: 400px;
+} */
+
+.tableFixHead {
+	overflow-y: auto;
+	height: 500px;
+}
+
+.ui.table thead tr:first-child > th {
+     position: sticky !important;
+     top: 0;
+     z-index: 2;
+}

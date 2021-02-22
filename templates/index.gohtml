@@ -1,0 +1,72 @@
+{{define "index"}}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trade Journal</title>
+
+<!-- <script type="text/javascript" src="/assets/js/jquery-1.11.0.js"></script> -->
+
+<script type="text/javascript" src="/assets/js/jquery-3.5.1.js"></script>
+<script type="text/javascript" src="/assets/js/jquery.dataTables.min.js"></script>
+<script type="text/javascript" src="/assets/js/dataTables.semanticui.min.js"></script>
+<script type="text/javascript" src="/assets/js/dataTables.fixedColumns.min.js"></script>
+<!-- <script type="text/javascript" src="assets/js/semantic-range.js"></script>	 -->
+<script type="text/javascript" src="/assets/js/moment.min.js"></script>
+<script type="text/javascript" src="/assets/js/underscore-min.js"></script>
+
+<!-- SEMANTIC JS -->
+<script type="text/javascript" src="/assets/Semantic-UI-2.3.0/dist/semantic.min.js"></script>
+<script type="text/javascript" src="/assets/Semantic-UI-2.3.0/dist/components/progress.min.js"></script>
+<script type="text/javascript" src="/assets/Semantic-UI-2.3.0/dist/components/modal.min.js"></script>
+
+<!-- DATEPICKER JS -->
+<script type="text/javascript" src="/assets/js/daterangepicker.js"></script>
+<script type="text/javascript" src='/assets/fullcalendar/lib/main.js'></script>
+
+<!-- CHARTS: -->
+<script type="text/javascript" src="/assets/js/canvasjs.min.js"></script>
+<script type="text/javascript" src="/assets/js/d3.v4.min.js"></script>
+<script type="text/javascript" src="/assets/js/techan.min.js"></script>
+
+<script src="/public/ckeditor/ckeditor.js"></script>
+<script src="/public/ckeditor/adapters/jquery.js"></script>
+
+
+<!-- VUE JS FOR CHARTS: -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js"></script>
+<script src="assets/js/trading-vue.min.js"></script> -->
+
+<!-- CUSTOM JS -->
+<script type="text/javascript" src="/public/js/app.js"></script>
+
+<link rel="stylesheet" type="text/css" href="/assets/css/bootstrap.min.css" />
+<link rel="stylesheet" href="/assets/Semantic-UI-2.3.0/dist/semantic.min.css" type="text/css">
+<link rel="stylesheet" href="/assets/Semantic-UI-2.3.0/dist/components/progress.min.css" type="text/css">
+<link rel="stylesheet" href="/assets/Semantic-UI-2.3.0/dist/components/modal.min.css" type="text/css">
+<link rel="stylesheet" href="/assets/css/daterangepicker.css" type="text/css" />
+<link rel='stylesheet' href='/assets/fullcalendar/lib/main.css' type="text/css" />
+
+<link rel="stylesheet" type="text/css" href="/public/css/main.css">
+<!-- The .PageName refers to the css which is to be imported. This is done by using the name of the page to load the specifc CSS
+file for the named page. All CSS files that are used for specific page manipulation must be the same name as the gohtml file name. -->
+{{ .PageName}}
+<!-- List of available css files:
+<link rel="stylesheet" type="text/css" href="/public/css/signup.css">
+<link rel="stylesheet" type="text/css" href="/public/css/login.css">
+<link rel="stylesheet" type="text/css" href="/public/css/messages.css">
+-->
+
+</head>
+
+<body>
+{{ .Header }}
+<div class="body">
+  {{ .Body }}
+</div>
+
+
+</body>
+
+
+</html>
+{{end}}

@@ -1,0 +1,94 @@
+{{ define "tradeBuilder" }}
+
+
+<!-- <div id="mainContainer"> -->
+	<!-- <div class="ui top  menu">
+		<div class="ui action input">
+	    	<input type="text" name="daterange" id="dateInput" start="" end="" placeholder="Select date range"/>
+	    	<button class="ui button" id="btnLoadTrades" >Load Trade Data</button>
+	    </div>
+	</div> -->
+	<div class="container">
+		<table class="ui single line celled table striped" id="tradeTable">
+			<!-- <thead>
+				<tr>
+					<th>Symbol</th>
+					<th>Executions</th>
+					<th>Shares Traded</th>
+					<th>Avg Entry Price</th>
+					<th>Avg Exit Price</th>
+					<th>P&L</th>
+					<th>Percent Gain</th>
+					<th>Exit Date</th>
+				</tr>
+			</thead>
+			<tbody id="tradeBody">
+			</tbody> -->
+		</table>
+	</div>
+<!-- </div> -->
+<script>
+	$( document ).ready(function() {
+		$("#tradeIcon").css("visibility", "visible")
+		var url = "/getTrades"
+		var callback = $(location).attr('href');
+		$.getJSON(url, function(dataSet, status){
+			// console.log("tried")
+			console.log(dataSet)
+			// console.log(toFixedTrunc(5.198795180722881, 2))
+			$('#tradeTable').DataTable( {
+		        data: dataSet,
+				"order": [[ 7, "desc" ]],
+				// IDEA: USE THIS TO RENDER THE SYMBOL WITH A LINK. MUST CHANGE THE DATA FIRST SO THE ID CAN BE PASSED:
+				// { data: null, render: function ( data, type, row ) {
+                // return '<a href="user_project_edit.php?project='+data.projects.projectid+'" target="_blank">User Project Edit Page</a>'
+
+		        columns: [
+		            { 	title: "Symbol",
+						data: null,
+						render: function(data, type, row){
+							return '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'+ data.Symbol + '</a>'
+						}
+				 	},
+		            { 	title: "Executions",
+						data: 'Executions'
+					},
+		            { title: "Shares Traded" ,
+						data: 'Quantity'
+					},
+		            { title: "Avg Entry Price",
+						data: "AvgEntryPrice",
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
+					},
+		            { title: "Avg Exit Price",
+						data: 'AvgExitPrice',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
+					},
+		            { title: "P&L",
+						data: 'ProfitLoss',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
+				 	},
+					{ title: "Percent" ,
+						data: 'PercentGain',
+						render: function(data, type, row) {
+							return toFixedTrunc(data, 2)
+						}
+					},
+					{ title: "Exit Date",
+						data: 'CloseDate'
+				 	}
+		        ]
+		    });
+
+		})
+
+	})
+</script>
+
+{{end}}

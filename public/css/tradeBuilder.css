@@ -1,0 +1,21 @@
+
+input {
+	width : 200px;
+}
+
+#mainContainer {
+	width: 90%;
+	margin: auto;
+
+}
+
+.tableFixHead {
+	overflow-y: auto;
+	height: 500px;
+}
+
+.ui.table thead tr:first-child > th {
+     position: sticky !important;
+     top: 0;
+     z-index: 2;
+}

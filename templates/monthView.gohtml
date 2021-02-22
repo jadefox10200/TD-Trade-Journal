@@ -1,0 +1,177 @@
+{{ define "monthView" }}
+
+<div id='calendar'></div>
+
+<script type="text/javascript">
+
+
+function getWeekTotals() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getWeekTotals",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
+
+function getRedDays() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getRedDays",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
+
+function getGreenDays() {
+	return $.ajax({
+		url: "/getEventsByQuery/sql/getGreenDays",
+		error: function(data){
+			alert(data.responseText)
+		}
+	})
+}
+
+$( document ).ready(function() {
+
+	$("#monthIcon").css("visibility", "visible")
+
+	$.when(getGreenDays(), getRedDays(), getWeekTotals()).done(function(greenDays, redDays, weekTotals){
+		console.log(JSON.parse(greenDays[0]))
+		console.log(JSON.parse(redDays[0]))
+		console.log(JSON.parse(weekTotals[0]))
+		var greenBacks = JSON.parse(greenDays[0])
+		var redBacks = JSON.parse(redDays[0])
+		var blueBacks = JSON.parse(weekTotals[0])
+		for (var i = 0; i< greenBacks.length; i++) {
+			greenBacks[i].display = "background"
+			greenBacks[i].title = ""
+		}
+		for (var i = 0; i< redBacks.length; i++) {
+			redBacks[i].display = "background"
+			redBacks[i].title = ""
+		}
+		for (var i = 0; i< blueBacks.length; i++) {
+			blueBacks[i].display = "background"
+			blueBacks[i].title = ""
+		}
+		var calendarEl = document.getElementById('calendar');
+	    var calendar = new FullCalendar.Calendar(calendarEl, {
+	    	initialView: 'dayGridMonth',
+			showNonCurrentDates: false,
+			height: 700,
+			dateClick: function(info) {
+
+				window.location.href = "/tpl/dayView?date="+ info.dateStr +""
+				// $(document).load();
+			},
+			eventClick: function(info) {
+
+				var dateStr = moment(info.event._instance.range.end).format("YYYY-MM-DD")
+				window.location.href = "/tpl/dayView?date="+ dateStr +""
+				// alert('Event: ' + info.event.title);
+				// alert('Coordinates: ' + info.jsEvent.pageX + ',' + info.jsEvent.pageY);
+				// alert('View: ' + info.view.type);
+				//
+				// change the border color just for fun
+				// info.el.style.borderColor = 'red';
+			},
+
+			eventSources: [
+				{
+					events : JSON.parse(redDays[0]),
+					// color: '#ff6666',
+					color: 'transparent',
+					textColor: '#333'
+				},
+				{
+					events : redBacks,
+					color: '#ff6666'
+				},
+				{
+					events: JSON.parse(greenDays[0]),
+					color: 'transparent',     // an option!
+					textColor: '#333'
+				},
+				{
+					events : greenBacks,
+					color: '#22FF22',
+					// color: '#B1FABC',
+				}
+				// ,
+				// {
+				// 	events : blueBacks,
+				// 	color: '#0000FF'
+				// 	// color: '#6666FF'
+				// },
+				// {
+				// 	events : JSON.parse(weekTotals[0]),
+				// 	color: 'transparent',
+				// 	textColor: '#333'
+				// }
+
+			]
+	    });
+	    calendar.render();
+		//change the event title text:
+		// $(".fc-event-title").css("font-weight","Bold")
+		// $(".fc-event-title").css("color","#333")
+		// $(".fc-event-title").css("font-size","2em")
+
+	})
+
+});
+
+
+
+$(function() {
+	$('input[name="singleDate"]').daterangepicker({
+		singleDatePicker: true,
+		showDropdowns: true,
+		minYear: 1901,
+		maxYear: parseInt(moment().format('YYYY'),10)
+	},
+	// function(start, end, label) {
+	// 	var years = moment().diff(start, 'years');
+	// 	alert("You are " + years + " years old!");
+	// }
+	);
+
+	// var start = moment().subtract(29, 'days');
+	var start = moment().startOf('month');
+    var end = moment().endOf('month');
+
+    function cb(start, end) {
+        $('#reportrange span').html(start.format('MMMM D, YYYY') + ' - ' + end.format('MMMM D, YYYY'));
+    }
+
+    $('#reportrange').daterangepicker({
+        startDate: start,
+        endDate: end,
+		showDropdowns: true,
+        ranges: {
+           'Today': [moment(), moment()],
+           'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+           'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+           'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+           'This Month': [moment().startOf('month'), moment().endOf('month')],
+           'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+        }
+    }, cb);
+
+    cb(start, end);
+});
+
+
+
+
+
+	  // .always(function() {
+	  //   alert( "finished" );
+	  // });
+
+
+</script>
+
+
+{{end}}

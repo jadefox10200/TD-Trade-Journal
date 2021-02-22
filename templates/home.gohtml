@@ -1,0 +1,165 @@
+{{define "home"}}
+
+<div id="homeBody">
+
+	<div class="ui grid">
+		<div class="left floated twelve wide column">
+
+			{{range .Days}}
+			<div class="ui container dayContainer">
+				<div class="ui top attached segment dayHeader" profit={{.ClosedGross}}>
+					<div class="ui grid">
+						<div class="six wide column">
+							<a class="h2Title" href= {{printf "%s" (print "/tpl/dayView?date=" .DateRaw)}}><h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2></a>
+
+							<div>
+								<li class="title_collection">Total trades: <span id="numTradesSpan">{{.TradeCount}}</span></li>
+								<li class="title_collection">Total volume: <span id="numSharesSpan">{{.SharesTraded}}</span></li>
+								<li class="title_collection">Closed P&L: <span id="closedValueSpan">{{.ClosedGross}}</span></li>
+							</div>
+							{{if .HasVideo}}
+							<div class="ui container" id="AVcontainer">
+								<button class="ui button basic" href={{printf "/AV/%s.mp4" .DateRaw}} TARGET=QUICKTIMEPLAYER.app><i class="play circle icon"></i>Play Recording</button>
+							</div>
+							{{end}}
+						</div>
+						<div class="ten wide column">
+							{{if .HasNote}}
+							<div id="noteContainer">
+								<h2>Daily Notes:</h2>
+								<div id="noteStaticData">{{.NoteData}}</div>
+							</div>
+							{{end}}
+						</div>
+					</div>
+				</div>
+				<table class="ui bottom attached single line table attached top">
+					<thead>
+						<tr>
+							<th>Symbol</th>
+							<th>Volume</th>
+							<th>P&L</th>
+							<th>Win/Loss %</th>
+							<th>Open Date</th>
+							<th>Close Date</th>
+						</tr>
+					</thead>
+					<tbody id="tableBody">
+						{{range .Trades}}
+						<tr>
+							<td>{{.Symbol}}</td>
+							<td>{{.Quantity}}</td>
+							<td>${{.ProfitLoss}}</td>
+							<td>{{.PercentGain }}%</td>
+							<td>{{.OpenDate}}</td>
+							<td>{{.CloseDate}}</td>
+						</tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+			{{end}}
+
+		</div>
+		<div class="right floated four wide column">
+			<div class="ui container rightContainer">
+				<h2> Open Positions</h2>
+				<table class="ui fixed single line celled table sortable">
+					<thead>
+						<th>Symbol</th>
+						<th>Shares</th>
+						<th>Avg Price</th>
+						<th>Cost</th>
+					</thead>
+					<tbody>
+						{{range .Positions}}
+							<tr>
+								<td>{{.Symbol}}</td>
+								<td>{{.Amount}}</td>
+								<td>{{.Price}}</td>
+								<td>{{abs .Cost}}</td>
+							</tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+			<div class="ui container rightContainer">
+				<h2><span> {{.Stats.Date}} Stats:</h2>
+
+				<div class="ui list divided" style="width: 90%;">
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>GI:
+						</span>
+						<span class="statData">${{.Stats.Gi}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Trades:
+  						</span>
+						<span class="statData">{{ .Stats.Trades}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle  icon"></i>Average Profit/Loss: $
+						</span>
+						<span class="statData">{{.Stats.AvgProfit}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Average Percent:
+						</span>
+						<span class="statData">{{.Stats.AvgPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Win Percent:
+						</span>
+						<span class="statData">{{MultPercent .Stats.WinPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Loss Percent:
+						</span>
+						<span class="statData">{{MultPercent .Stats.LossPercent}}%</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Best Winner:
+						</span>
+						<span class="statData">${{ .Stats.BigWinner}}</span>
+					</div>
+					<div class="item">
+						<span>
+							<i class="right triangle icon"></i>Worst Loser:
+						</span>
+						<span class="statData">${{.Stats.BigLoser}}</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+
+	</div>
+</div>
+<script>
+
+	$( document ).ready( function() {
+		$("#homeIcon").css("visibility", "visible")
+		$(".dayHeader").each(function() {
+			var profit = $(this).attr("profit")
+			if (profit > 0) {
+				$(this).addClass("green")
+			} else if (profit == 0) {
+				$(this).addClass("black")
+			} else {
+				$(this).addClass("red")
+			}
+
+		});
+	} );
+
+
+</script>
+
+{{end}}

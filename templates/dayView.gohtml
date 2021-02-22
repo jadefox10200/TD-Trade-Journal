@@ -1,0 +1,251 @@
+{{define "dayView"}}
+
+<div id="dayBody">
+
+	<div class="ui segment" id="mainContainer">
+		<div class="ui buttons">
+			<button id="btnBack" class="ui labeled icon button"><i class="left chevron icon"></i>Back</button>
+			<button id="btnForward" class="ui right labeled icon button">Forward<i class="right chevron icon"></i></button>
+		</div>
+
+		<div class="ui action input" style="float:right">
+			<input type="text" name="singleDate" id="singleDate" value="" placeholder="Select Date..."/>
+			<div id="btnGoDate" class="ui button">Go</div>
+		</div>
+
+		<div class="ui clearing divider"></div>
+
+		<div class="ui grid" >
+			<div class="four wide column">
+				<h2 class="ui right left" id="dateHeader" date={{ .DateRaw }}>{{ .Date}}</h2>
+				<div>
+					<li class="title_collection">Total trades: <span id="numTradesSpan"></span></li>
+					<li class="title_collection">Total volume: <span id="numSharesSpan"></span></li>
+					<li class="title_collection">Closed P&L: <span id="closedValueSpan"></span></li>
+				</div>
+				{{if .HasVideo}}
+				<div class="ui container" id="AVcontainer">
+					<button class="ui button basic" href={{printf "/AV/%s.mp4" .DateRaw}} TARGET=QUICKTIMEPLAYER.app><i class="play circle icon"></i>Play Recording</button>
+				</div>
+				{{end}}
+			</div>
+			<div class="twelve wide column">
+				<a id="addNote">Add Note</a>
+				<div id="noteTextContainer">
+					<textarea id="editor1" contenteditable="true"></textarea>
+					<div style="padding-top: 15px;">
+						<button id="saveBtn" class="mini ui button basic green">Save</button>
+						<button id="cancelBtn" class="mini ui button basic red">Cancel</button>
+					</div>
+				</div>
+				<div id="noteContainer">
+					<h2>Daily Notes:</h2>
+					<div id="noteStaticData">{{.NoteData}}</div>
+					<div style="padding-top: 15px;"><button class='mini ui button basic blue' id='editBtn'>Edit Note</button></div>
+				</div>
+			</div>
+
+		</div>
+
+		<div class="ui clearing divider"></div>
+
+		<div class="ui segment">
+			<table class="ui fixed single line celled table bottom display sortable" id="tradeTable">
+				<thead>
+					<tr>
+						<th>Symbol</th>
+						<th>Volume</th>
+						<th>P&L</th>
+						<th>Win/Loss %</th>
+						<th>Open Date</th>
+						<th>Close Date</th>
+					</tr>
+				</thead>
+				<tbody id="tableBody">
+				</tbody>
+			</table>
+		</div>
+
+		{{if .HasVideo}}
+		<div class="ui clearing divider"></div>
+
+		<div class="ui container center-it">
+			<video WIDTH=863 HEIGHT=539 autostart="0" controls="controls">
+				<source src={{printf "/AV/%s.mp4" .DateRaw}} type="video/mp4">
+				<param name="autoplay" value="false" />
+			</video>
+		</div>
+		{{end}}
+	</div>
+</div>
+
+<script>
+
+	$( document ).ready(function() {
+
+		$("#dayIcon").css("visibility", "visible")
+
+		{{if .HasNote}}
+			$("#addNote").css('display', 'none')
+			$("#noteContainer").css('display', 'inline');
+			$("#editor1").html({{.NoteData}});
+			// CKEDITOR.instances['editor1'].setData({{.NoteData}})
+
+			$("#cancelBtn").on('click', function() {
+				$("#noteTextContainer").css('display', 'none')
+				$("#noteContainer").css('display', 'inline');
+			})
+
+			$("#editBtn").on('click', function() {
+				$("#noteContainer").css('display', 'none')
+				$("#noteTextContainer").css('display', 'inline');
+			})
+
+		{{else}}
+
+			$("#addNote").on('click', function() {
+				$(this).css('display', 'none');
+				$("#noteTextContainer").css('display', 'inline');
+
+			})
+
+			$("#cancelBtn").on('click', function() {
+				$("#addNote").css('display', 'inline')
+				$("#noteTextContainer").css('display', 'none');
+			})
+
+		{{end}}
+
+		$( '#editor1' ).ckeditor({
+			uiColor: '#14B8C4',
+			height: 150
+			// toolbar: [
+			// 	[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+			// 	[ 'FontSize', 'TextColor', 'BGColor' ]
+			// ]
+		});
+
+		$("#saveBtn").on('click', function() {
+			var data = $("#editor1").val();
+			var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+			var obj = {
+				NoteDate: date,
+				NoteData: data,
+			}
+			$.ajax({
+				type: "POST",
+			  url: "/saveNoteDay",
+			  data: obj
+			})
+			.done(function(data) {
+				var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+				window.location.href = "/tpl/dayView?date="+ date +""
+			})
+			.fail(function(data) {
+				alert(data.responseText)
+			});
+
+			//when we save, just reload the damn page...
+
+		})
+
+		// CKEDITOR.replace( 'editor1', {
+		// 	uiColor: '#14B8C4',
+		// 	toolbar: [
+		// 		[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+		// 		[ 'FontSize', 'TextColor', 'BGColor' ]
+		// 	]
+		// });
+
+
+
+
+		$('input[name="singleDate"]').daterangepicker({
+			singleDatePicker: true,
+			showDropdowns: true,
+			minYear: 1901,
+			format: "DD-MM-YYYY",
+			maxYear: parseInt(moment().format('YYYY'),10)
+		},
+		// function(start, end, label) {
+		//
+		// }
+		);
+
+		$("#btnForward").on('click', function() {
+
+			var date = moment($("#dateHeader").attr("date")).add(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		$("#btnBack").on('click', function() {
+			var date = moment($("#dateHeader").attr("date")).subtract(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		$("#btnGoDate").on('click', function() {
+			var date = moment($("#dateHeader").attr("date")).subtract(1, 'days').format("YYYY-MM-DD")
+			window.location.href = "/tpl/dayView?date="+ date +""
+		});
+
+		var date = moment($("#dateHeader").attr("date")).format("DD-MM-YYYY")
+		$("#singleDate").val(date)
+
+		var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+		var url = "/getTradesForDayView?date=" + date
+		$.getJSON(url, function(dataSet, status){
+			console.log(dataSet)
+			$("#numTradesSpan").html(dataSet.TradeCount)
+			$("#numSharesSpan").html(dataSet.SharesTraded)
+			$("#closedValueSpan").html(toFixedTrunc(dataSet.ClosedGross, 2))
+			$.each(dataSet.Trades, function(){
+				  $('#tableBody').append(rowBuilder(this));
+			});
+
+		})
+		.fail(function(data) {
+			alert(data.responseText)
+		})
+		.always(function() {
+			$("#btnSaveTrades").removeClass("loading")
+		});
+
+		var callback = $(location).attr('href');
+
+		function rowBuilder(data) {
+			console.log("Data",data)
+			var row = ''
+			row += '<tr>'
+					+ '<td width="90">';
+					if (data.ID != 0) {
+						row += '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
+							+ data.Symbol
+						+ '</a>'
+					} else {
+						row += data.Symbol
+					}
+					row += '</td>'
+					+ '<td>'
+						+ data.Quantity
+					+ '</td>'
+					+ '<td>$'
+						+ data.ProfitLoss
+					+ '</td>'
+					+ '<td>'
+						+ data.PercentGain
+					+ '%</td>'
+					+ '<td>'
+						+ data.OpenDate
+					+ '</td>'
+					+ '<td>'
+						+ data.CloseDate
+					+ '</td>'
+			+ '</tr>';
+			return row
+		}
+
+	});
+
+</script>
+
+{{end}}

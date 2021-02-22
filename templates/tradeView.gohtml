@@ -1,0 +1,727 @@
+{{define "tradeView"}}
+
+<div id="tradeBody">
+
+	<div class="ui segment" id="mainContainer">
+
+		<div class="ui grid">
+			<div class="four wide column">
+				<li><a href= {{printf "%s" (print .Callback)}}>Back</a></li>
+
+				<h2 class="ui right left" id="symbolHeader">{{ .Symbol}}</h2>
+				<h3 class="ui right left" id="dateHeader">{{ .DisplayDate}}</h3>
+
+				<div>
+
+					<li class="title_collection">Total volume: <span id="numSharesSpan">{{ .Shares}}</span></li>
+					<li class="title_collection">Closed P&L: <span id="closedValueSpan">${{ .ProfitLoss}}</span></li>
+					<li class="title_collection">Win/Loss Percent: <span id="percentGainSpace">{{ .PercentGain}}%</span></li>
+					<!-- ADD TITLE FOR MAX TRADE COST TO SHOW HOW MUCH CAPITAL WAS USED FOR THE TRADE -->
+					<!-- WE SHOULD ALSO KEEP TRACK OF THIS IN THE DATABASE FOR ANALYSIS REASONS. -->
+					<!-- TAGS -->
+					<span id="tagBoxList" style="display: none">
+						<span class="tagBoxItem">
+							<span class="tagBoxContent">
+								<a href="javascript:void(0)" class="tagBoxRemove">x</a>
+								{{ .Symbol}}
+							</span>
+						</span>
+					</span>
+				</div>
+			</div>
+			<div class="twelve wide column">
+				<a id="addNote">Add Note</a>
+				<div id="noteTextContainer">
+					<textarea id="editor1" contenteditable="true"></textarea>
+					<div style="padding-top: 15px;">
+						<button id="saveBtn" class="mini ui button basic green">Save</button>
+						<button id="cancelBtn" class="mini ui button basic red">Cancel</button>
+					</div>
+				</div>
+				<div id="noteContainer">
+					<h2>Trade Notes:</h2>
+					<div id="noteStaticData">{{.NoteData}}</div>
+					<div style="padding-top: 15px;"><button class='mini ui button basic blue' id='editBtn'>Edit Note</button></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="ui clearing divider"></div>
+
+		<div class="ui segment">
+			<table class="ui fixed single line celled table bottom display sortable" id="tradeTable">
+				<thead>
+					<tr>
+						<th>Transaction Date</th>
+						<th>Symbol</th>
+						<th>Instruction</th>
+						<th>Volume</th>
+						<th>Price</th>
+					</tr>
+				</thead>
+				<tbody id="tableBody">
+					{{range .Executions}}
+					<tr><td>{{ .OrderDate}}</td><td>{{ .Symbol}}</td><td>{{ .Instruction}}</td><td>{{ .Quantity}}</td><td>{{ .Price}}</td></tr>
+					{{ end }}
+				</tbody>
+			</table>
+		</div>
+
+		<div id="intraDayCharts" class="chart"></div>
+		<div class="ui clearing divider"></div>
+
+		<div>
+			<button class="ui black basic button" id="download" style="float: left;">Update Chart Data</button>
+			<select class="ui simple droodown menu" style="float: right;">
+				<option value="4" class="item" selected>3 Months</option>
+				<option value="2" class="item">6 Months</option>
+		    	<option value="1" class="item">1 Year</option>
+		    </select>
+		</div>
+
+		<div id="dailyChart" class="chart"></div>
+
+	</div>
+
+
+</div>
+
+<script>
+
+
+	$( document ).ready(function() {
+
+		$("#tradeIcon").css("visibility", "visible")
+
+		//NOTES FUNCTIONS:
+		{{if .HasNote}}
+			console.log("hasNote")
+			$("#addNote").css('display', 'none')
+			$("#noteContainer").css('display', 'inline');
+			$("#editor1").html({{.NoteData}});
+			// CKEDITOR.instances['editor1'].setData({{.NoteData}})
+
+			$("#cancelBtn").on('click', function() {
+				$("#noteTextContainer").css('display', 'none')
+				$("#noteContainer").css('display', 'inline');
+			})
+
+			$("#editBtn").on('click', function() {
+				$("#noteContainer").css('display', 'none')
+				$("#noteTextContainer").css('display', 'inline');
+			})
+
+		{{else}}
+			console.log("didn't Find note")
+			$("#addNote").on('click', function() {
+				$(this).css('display', 'none');
+				$("#noteTextContainer").css('display', 'inline');
+
+			})
+
+			$("#cancelBtn").on('click', function() {
+				$("#addNote").css('display', 'inline')
+				$("#noteTextContainer").css('display', 'none');
+			})
+
+		{{end}}
+
+		$( '#editor1' ).ckeditor({
+			uiColor: '#14B8C4',
+			height: 150
+			// toolbar: [
+			// 	[ 'Bold', 'Italic', '-', 'NumberedList', 'BulletedList', '-', 'Link', 'Unlink' ],
+			// 	[ 'FontSize', 'TextColor', 'BGColor' ]
+			// ]
+		});
+
+		$("#saveBtn").on('click', function() {
+			var data = $("#editor1").val();
+			var obj = {
+				Id: {{ .ID}},
+				NoteData: data
+			}
+			$.ajax({
+				type: "POST",
+			  url: "/saveTradeNote",
+			  data: obj
+			})
+			// '<a href="/tpl/tradeView?id='+ data.ID +'&callback=' + callback +'";>'
+			.done(function(data) {
+				var date = moment($("#dateHeader").attr("date")).format("YYYY-MM-DD")
+				window.location.href = "/tpl/tradeView?id="+ {{.ID}} +""
+			})
+			.fail(function(data) {
+				alert(data.responseText)
+			});
+
+			//when we save, just reload the damn page...
+
+		})
+
+		//SELECT BOX FOR DAILY CHART
+		$("select").change(function () {
+		    var str = "";
+		    $( "select option:selected" ).each(function() {
+				$("#dailyChart").html("")
+				var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
+				dailyChart($(this).text(), dailyPath, $(this).val())
+		    });
+	  	})
+
+		//UPDATING THE CHARTS.
+		$("#download").on('click', function(){
+			var urlString = "/downloadCharts?"
+			urlString += "symbol=" + {{ .Symbol}} + "&"
+			urlString += "startDate=" + encodeURIComponent({{ .StartDate}}) + "&"
+			urlString += "endDate=" + encodeURIComponent({{ .EndDate}}) + "&"
+			urlString += "id=" + {{ .ID}}
+			$(this).addClass("loading")
+			$.ajax({
+				url: urlString
+			})
+			.done(function(data) {
+				// console.log(data)
+			})
+			.fail(function(data) {
+				alert(data.responseText);
+			})
+			.always(function() {
+				alert( "complete" );
+				$("#download").removeClass("loading")
+			});
+		});
+
+		//DRAWING THE ENTRY AND EXIT CHARTS:
+		function chart(symbol, csvPath, fullWidth, fullHeight) {
+			 var margin = {top: 20, right: 30, bottom: 30, left: 30},
+					 width = fullWidth - margin.left - margin.right,
+					 height = fullHeight - margin.top - margin.bottom,
+					 volumeHeight = fullHeight*.25;
+
+			 // var parseDate = d3.timeParse("%d-%b-%y");
+			 var parseDate = d3.timeParse("%d-%b-%y %H:%M");
+
+			 var zoom = d3.zoom()
+					 .on("zoom", zoomed);
+
+			 var x = techan.scale.financetime()
+					 .range([0, width]);
+
+			 var y = d3.scaleLinear()
+					 .range([height, 0]);
+
+			 var yPercent = y.copy();   // Same as y at this stage, will get a different domain later
+
+			 var yVolume = d3.scaleLinear()
+					 .range([height, height - volumeHeight]);
+
+			 var yInit, yPercentInit, zoomableInit;
+
+			 var candlestick = techan.plot.candlestick()
+					 .xScale(x)
+					 .yScale(y);
+
+			var tradearrow = techan.plot.tradearrow()
+	             .xScale(x)
+	             .yScale(y)
+	             .y(function(d) {
+					 // console.log("D", d)
+	                 // Display the buy and sell arrows a bit above and below the price, so the price is still visible
+	                 if(d.type === 'BUY') return y(d.price)+25;
+	                 if(d.type === 'SELL') return y(d.price)-25;
+	                 else return y(d.price);
+	             })
+				 .orient(function(d) { return d.type.startsWith("BUY") ? "up" : "down"; })
+
+
+			 // var sma0 = techan.plot.sma()
+				// 	 .xScale(x)
+				// 	 .yScale(y);
+			 //
+			 // var sma1 = techan.plot.sma()
+				// 	 .xScale(x)
+				// 	 .yScale(y);
+			 //
+			 // var ema2 = techan.plot.ema()
+				// 	 .xScale(x)
+				// 	 .yScale(y);
+
+			 var volume = techan.plot.volume()
+					 .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
+					 .xScale(x)
+					 .yScale(yVolume);
+
+			 var xAxis = d3.axisBottom(x)
+					 .ticks(4);
+
+			 var yAxis = d3.axisRight(y)
+					 .ticks(4);
+
+			 var percentAxis = d3.axisLeft(yPercent)
+					 .ticks(4)
+					 .tickFormat(d3.format('+.1%'));
+
+			 var volumeAxis = d3.axisRight(yVolume)
+					 .ticks(2)
+					 .tickFormat(d3.format(",.3s"));
+
+
+
+			 var svg = d3.select("#intraDayCharts").append("svg")
+					 .attr("width", width + margin.left + margin.right)
+					 .attr("height", height + margin.top + margin.bottom)
+					 .append("g")
+					 .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+			 svg.append("clipPath")
+					 .attr("id", "clip")
+					 .append("rect")
+					 .attr("x", 0)
+					 .attr("y", y(1))
+					 .attr("width", width)
+					 .attr("height", y(0) - y(1));
+
+			 svg.append('text')
+					 .attr("class", "symbol")
+					 .attr("x", 5)
+					 .text(" (" + symbol + ")");
+
+			 svg.append("g")
+					 .attr("class", "volume")
+					 .attr("clip-path", "url(#clip)");
+
+			 svg.append("g")
+					 .attr("class", "candlestick")
+					 .attr("clip-path", "url(#clip)");
+
+			svg.append("g")
+	             .attr("class", "tradearrow")
+	             .attr("clip-path", "url(#ohlcClip)");
+
+			 svg.append("g")
+					 .attr("class", "x axis")
+					 .attr("transform", "translate(0," + height + ")");
+
+			 svg.append("g")
+					 .attr("class", "y axis")
+					 .attr("transform", "translate(" + width + ",0)");
+
+			 svg.append("g")
+					 .attr("class", "percent axis");
+
+			 svg.append("g")
+					 .attr("class", "volume axis");
+
+			 svg.append("rect")
+					 .attr("class", "pane")
+					 .attr("width", width)
+					 .attr("height", height)
+					 .call(zoom);
+
+			 d3.csv(csvPath, function (error, data) {
+				 var accessor = candlestick.accessor(),
+					 indicatorPreRoll = 33;  // Don't show where indicators don't have data
+
+				 data = data.map(function (d) {
+					 return {
+						 date: parseDate(moment(parseInt(d.Datetime, 10)).local().format('D-MMM-YY H:m')),
+						 open: +d.Open,
+						 high: +d.High,
+						 low: +d.Low,
+						 close: +d.Close,
+						 volume: +d.Volume
+					 };
+				 }).sort(function (a, b) {
+					 return d3.ascending(accessor.d(a), accessor.d(b));
+				 });
+
+				 x.domain(techan.scale.plot.time(data, accessor).domain());
+				 y.domain(techan.scale.plot.ohlc(data.slice(indicatorPreRoll), accessor).domain());
+				 yPercent.domain(techan.scale.plot.percent(y, accessor(data[indicatorPreRoll])).domain());
+				 yVolume.domain(techan.scale.plot.volume(data, accessor.v).domain());
+
+				// check if these trades are for this day:
+				var check = false
+
+
+				var chartStart = moment(data[0].date)
+				var chartEnd = moment(data[data.length -1 ].date)
+
+
+				var trades = []
+				{{range .Executions}}
+					var orderDate = moment({{ .OrderDate}}, "DD-MM-YYYY hh:mm:ss")
+					if ( (orderDate.isAfter(chartStart) && orderDate.isBefore(chartEnd))  || (orderDate.isSame(chartStart)) || (orderDate.isSame(chartEnd)) ) {
+						var item = {
+							date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')),
+							type: {{.Instruction}},
+							price: {{.Price}},
+							quantity: {{.Quantity}}
+						}
+						trades.push(item)
+					}
+				{{end}}
+
+				//
+				// var trades = [
+				// 	{{range .Executions}}
+				//
+				// 		{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
+				// 	{{end}}
+				// ]
+
+				 svg.select("g.candlestick").datum(data).call(candlestick);
+				 svg.select("g.volume").datum(data).call(volume);
+
+				 // svg.select("g.sma.ma-0").datum(techan.indicator.sma().period(10)(data)).call(sma0);
+				 // svg.select("g.sma.ma-1").datum(techan.indicator.sma().period(20)(data)).call(sma1);
+				 // svg.select("g.ema.ma-2").datum(techan.indicator.ema().period(50)(data)).call(ema2);
+
+				 svg.select("g.tradearrow").datum(trades).call(tradearrow);
+
+				 zoomableInit = x.zoomable().domain([indicatorPreRoll, data.length]).copy(); // Zoom in a little to hide indicator preroll
+				 yInit = y.copy();
+				 yPercentInit = yPercent.copy();
+
+				 draw();
+			 });
+
+			 function reset() {
+				 zoom.scale(1);
+				 zoom.translate([0, 0]);
+				 draw();
+			 }
+
+			 function zoomed() {
+				 x.zoomable().domain(d3.event.transform.rescaleX(zoomableInit).domain());
+				 y.domain(d3.event.transform.rescaleY(yInit).domain());
+				 yPercent.domain(d3.event.transform.rescaleY(yPercentInit).domain());
+
+				 draw();
+			 }
+
+			 function draw() {
+				 svg.select("g.x.axis").call(xAxis);
+				 svg.select("g.y.axis").call(yAxis);
+				 svg.select("g.volume.axis").call(volumeAxis);
+				 svg.select("g.percent.axis").call(percentAxis);
+
+				 // We know the data does not change, a simple refresh that does not perform data joins will suffice.
+				 svg.select("g.candlestick").call(candlestick.refresh);
+				 svg.select("g.volume").call(volume.refresh);
+				 svg.select("g.tradearrow").call(tradearrow.refresh);
+				 // svg.select("g.sma.ma-0").call(sma0.refresh);
+				 // svg.select("g.sma.ma-1").call(sma1.refresh);
+				 // svg.select("g.ema.ma-2").call(ema2.refresh);
+			 }
+		}
+
+
+		//DRAWING THE MAIN DAILY CAHRT:
+		function dailyChart(symbol, csvPath, chartTimeFrame) {
+			var margin = {top: 20, right: 50, bottom: 30, left: 50},
+		            width = 960 - margin.left - margin.right,
+		            height = 500 - margin.top - margin.bottom,
+					volumeHeight = height*.25;
+			// var parseDate = d3.timeParse("%d-%b-%y %H:%M");
+
+			var dateFormat = d3.timeFormat("%d-%b-%y"),
+				parseDate = d3.timeParse("%d-%b-%y"),
+		        // parseDate = d3.timeParse("%d-%b-%y"),
+		        valueFormat = d3.format(',.2f');
+
+		    var x = techan.scale.financetime()
+		            .range([0, width]);
+
+		    var y = d3.scaleLinear()
+		            .range([height, 0]);
+
+		    var candlestick = techan.plot.candlestick()
+		            .xScale(x)
+		            .yScale(y);
+
+			var tradearrow = techan.plot.tradearrow()
+		         .xScale(x)
+		         .yScale(y)
+		         .orient(function(d) { return d.type.startsWith("BUY") ? "up" : "down"; })
+		         .on("mouseenter", enterArrow)
+		         .on("mouseout", outArrow);
+
+		    var xAxis = d3.axisBottom()
+		            .scale(x);
+
+			var xTopAxis = d3.axisTop(x);
+
+		    // var yAxis = d3.axisLeft()
+		    //         .scale(y);
+
+			var yAxis = d3.axisLeft(y);
+
+	    	var yRightAxis = d3.axisRight(y);
+
+			//volume:
+			var yVolume = d3.scaleLinear()
+					.range([height, height - volumeHeight]);
+			//volume:
+
+			var volume = techan.plot.volume()
+	            .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
+	            .xScale(x)
+	            .yScale(yVolume);
+
+			var volumeAxis = d3.axisLeft(yVolume)
+	            .ticks(4)
+	            .tickFormat(d3.format(",.3s"));
+
+		    var volumeAnnotation = techan.plot.axisannotation()
+		            .axis(volumeAxis)
+		            .orient("right")
+		            .width(35);
+
+		    var svg = d3.select("#dailyChart").append("svg")
+		            .attr("width", width + margin.left + margin.right)
+		            .attr("height", height + margin.top + margin.bottom)
+		            .append("g")
+		            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+			var coordsText = svg.append('text')
+		        .style("text-anchor", "end")
+		        .attr("class", "coords")
+		        .attr("x", width - 5)
+		        .attr("y", 5);
+
+			var tradeText = svg.append('text')
+		        .style("text-anchor", "end")
+		        .attr("class", "coords")
+		        .attr("x", width - 5)
+		        .attr("y", 25);
+
+			//cross:
+			var ohlcAnnotation = techan.plot.axisannotation()
+				.axis(yAxis)
+				.orient('left')
+				// .accessor(candlestick.accessor())
+				.format(d3.format(',.2f'));
+				// .translate([x(1), 0]);
+
+			var ohlcRightAnnotation = techan.plot.axisannotation()
+	            .axis(yRightAxis)
+	            .orient('right')
+				.format(d3.format(',.2f'))
+	            .translate([width, 0]);
+
+			var timeAnnotation = techan.plot.axisannotation()
+					.axis(xAxis)
+					.orient('bottom')
+					.format(d3.timeFormat("%d-%b-%y"))
+					.width(65)
+					.translate([0, height]);
+
+			var timeTopAnnotation = techan.plot.axisannotation()
+		        .axis(xTopAxis)
+		        .orient('top');
+
+			var crosshair = techan.plot.crosshair()
+		         .xScale(x)
+		         .yScale(y)
+		         .xAnnotation([timeAnnotation, timeTopAnnotation])
+		         .yAnnotation([ohlcAnnotation, ohlcRightAnnotation, volumeAnnotation])
+				 // .yAnnotation([ohlcAnnotation, rightAnnotation, volumeAnnotation])
+		         .on("enter", enter)
+		         .on("out", out)
+		         .on("move", move);
+				//end cross
+
+			//trade arrow text?
+			var valueText = svg.append('text')
+		        .style("text-anchor", "end")
+		        .attr("class", "coords")
+		        .attr("x", width - 5)
+		        .attr("y", 5);
+
+
+			var filePath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
+		    d3.csv(filePath, function(error, data) {
+		        var accessor = candlestick.accessor();
+
+		        data = data.map(function(d) {
+		            return {
+						//This is dumb. We are adding time to offset the utc time to be inside the same day when it's converted. TD AMERITRADE GIVES US THE TIME AS 06:00 SO WHEN CONVERTED, IT DROPS BACK TO THE PREVIOUS DAY AT 22:00, TRUNCATES AND THEN DISPLAYS 1 DAY OFFSET...
+
+		                date: parseDate(moment.utc((parseInt(d.Datetime, 10))+ 10000000).local().format('D-MMM-YY')),
+		                open: +d.Open,
+		                high: +d.High,
+		                low: +d.Low,
+		                close: +d.Close,
+		                volume: +d.Volume
+		            };
+		        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
+				//cut down the data to the time frame we want if needed. Raw data should be 1 year worth:
+				data = data.slice(data.length - (data.length/chartTimeFrame), data.length)
+
+				//cross
+				x.domain(data.map(accessor.d));
+				y.domain(techan.scale.plot.ohlc(data, accessor).domain());
+				yVolume.domain(techan.scale.plot.volume(data).domain());
+
+				//trade arrows:
+				var trades = [
+					{{range .Executions}}
+
+						{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
+					{{end}}
+					// { date: data[67].date, type: "buy", price: data[67].low, quantity: 1000 },
+					// { date: data[100].date, type: "sell", price: data[100].high, quantity: 200 },
+					// { date: data[156].date, type: "buy", price: data[156].open, quantity: 500 },
+					// { date: data[167].date, type: "sell", price: data[167].close, quantity: 300 },
+					// { date: data[187].date, type: "buy-pending", price: data[187].low, quantity: 300 }
+				];
+
+		        svg.append("g")
+		                .attr("class", "candlestick");
+
+				//volume:
+				svg.append("g")
+   					 .attr("class", "volume axis");
+
+		        svg.append("g")
+		                .attr("class", "x axis")
+		                .attr("transform", "translate(0," + height + ")");
+
+				//Putting the price at the top left. Doesn't work well.
+		        // svg.append("g")
+		        //         .attr("class", "y axis")
+		        //         .append("text")
+		        //         .attr("transform", "rotate(-90)")
+		        //         .attr("y", 6)
+		        //         .attr("dy", ".71em")
+		        //         .style("text-anchor", "end")
+		        //         // .text("Price ($)");
+
+				svg.append("g")
+                  .attr("class", "y axis")
+                  .call(yAxis);
+
+				svg.append("g")
+	                .attr("class", "y right axis")
+	                .attr("transform", "translate(" + width + ",0)")
+	                .call(yRightAxis);
+
+
+				{{range .Executions}}
+					svg.append("g")
+						.attr("class", "y annotation left " + {{.Instruction}})
+						//left annotations:
+						.datum([{value: {{.Price}} }]) // 74 should not be rendered
+						.call(ohlcAnnotation);
+				{{end}}
+
+
+				// svg.append("g")
+		        //         .attr("class", "y annotation left SELL")
+				// 		//left annotations:
+		        //         .datum([{value: 85}]) // 74 should not be rendered
+		        //         .call(ohlcAnnotation);
+
+		        // svg.append("g")
+		        //         .attr("class", "x annotation bottom")
+		        //         .datum([{value: x.domain()[30]}])
+		        //         .call(timeAnnotation);
+
+				svg.append('g')
+		                .attr("class", "crosshair")
+		                .datum({ x: x.domain()[80], y: 67.5 })
+		                .call(crosshair)
+		                .each(function(d) { move(d); }); // Display the current data
+
+				// svg.append("g")
+	            //     .attr("class", "y annotation right")
+	            //     .datum([{value: 61}, {value:52}])
+	            //     .call(ohlcRightAnnotation);
+
+		        svg.append('text')
+		                .attr("x", 5)
+		                .attr("y", 15)
+		                .text("(" + {{ .Symbol}} +")");
+
+				svg.append("g")
+		                .attr("class", "tradearrow");
+
+				svg.select("g.candlestick").datum(data).call(candlestick);
+				svg.select("g.volume").datum(data).call(volume);
+				//trade arrow class:
+
+		        // Data to display initially
+		        draw(data, trades);
+				// draw(data, trades);
+		        // Only want this button to be active if the data has loaded
+		        // d3.select("button").on("click", function() { draw(data); }).style("display", "inline");
+		    });
+			//trades come into this function:
+		    function draw(data, trades) {
+		        x.domain(data.map(candlestick.accessor().d));
+		        y.domain(techan.scale.plot.ohlc(data, candlestick.accessor()).domain());
+
+		        svg.selectAll("g.candlestick").datum(data).call(candlestick);
+				// svg.selectAll("g.volume").datum(data).call(volume);
+				svg.selectAll("g.volume.axis").call(volumeAxis);
+				//added trade arrows:
+				svg.selectAll("g.tradearrow").datum(trades).call(tradearrow);
+		        svg.selectAll("g.x.axis").call(xAxis);
+		        svg.selectAll("g.y.axis").call(yAxis);
+				svg.selectAll("g.y.right.axis").call(yRightAxis);
+				// svg.selectAll("g.y.annotation.left").datum(leftData).call(ohlcAnnotation);
+		    }
+
+			function enterArrow(d) {
+				console.log("entered")
+				valueText.style("display", "inline");
+				refreshText(d);
+			}
+
+			function outArrow() {
+				valueText.style("display", "none");
+			}
+
+			function refreshText(d) {
+				valueText.text("Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price));
+			}
+
+			function enter() {
+				coordsText.style("display", "inline");
+			}
+
+			function out() {
+				coordsText.style("display", "none");
+			}
+
+			function move(coords) {
+				coordsText.text(
+					timeAnnotation.format()(coords.x) + ", " + ohlcAnnotation.format()(coords.y)
+				);
+			}
+		}
+
+
+
+		//CALLS TO DRAW THE CHARTS:
+		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"
+		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv"
+		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
+		chart("Entry", entryPath,500, 300);
+		chart("Exit", exitPath,500, 300);
+
+		 //chartTimeFrame is the following:
+		 //1 = 1 year
+		 //2 = 6 months
+		 //4 = 3 months
+		dailyChart("Year", entryPath, 4);
+		 // chart("Apple, Inc.", "AAPL", 300, 200);
+
+
+	});
+
+</script>
+
+{{end}}
