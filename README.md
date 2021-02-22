@@ -10,6 +10,7 @@ order to set up the needed tables.
 Then you must set the following environment variables:
 DBLOGIN
 TDAMERITRADE_CLIENT_ID
+TDAMERITRADE_ACCT_ID
 
 The DBLOGIN must be set to whatever password you have set for the MYSQL database.
 The TDAMERITRADE_CLIENT_ID must be obtained from TD Ameritrade. On that note,

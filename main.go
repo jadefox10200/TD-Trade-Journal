@@ -384,18 +384,23 @@ func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter,
 		refreshToken = ?,
 		expiry = ?`
 
+		fmt.Println("Valid:", token.Valid())
+		fmt.Println("access:", token.AccessToken)
+		fmt.Println("expiry:", token.Expiry.String())
+
 	result, err := db.db.Exec(updateStr, token.AccessToken, token.RefreshToken, token.Expiry.Format("2006-01-02 15:04:05.999999999 -0700 MST"))
 	if err != nil {
+		fmt.Println("Error setting token: %s", err.Error())
 		return fmt.Errorf("Failed to set token in DB: %s", err.Error())
 	}
 
-	i, err := result.RowsAffected()
+	_, err = result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("Failed to check result when setting token: %s\n", err.Error())
 	}
-	if i != 1 {
-		return fmt.Errorf("When setting the token in DB, we set a different amount of rows than intended: %v|%s\n", i, err.Error())
-	}
+	// if i != 1 {
+	// 	return fmt.Errorf("When setting the token in DB, we set a different amount of rows than intended: %v|%s\n", err.Error())
+	// }
 
 	//IDEA: SETTING TOKEN VIA USE OF THE ENV. THIS MAINTAINS STATE PAST 30 MINUTES. HOWEVER, WHEN SHUTTING DOWN SERVER, IT IS NOT MAINTAINED:
 	// err := os.Setenv("TDAMERITRADE_ACCESS_TOKEN", token.AccessToken)
@@ -566,6 +571,7 @@ func (h *TDHandlers) Authenticate(w http.ResponseWriter, req *http.Request) {
 
 func (h *TDHandlers) Callback(w http.ResponseWriter, req *http.Request) {
 
+	fmt.Println("made it to callback...")
 	ctx := context.Background()
 	_, err := h.authenticator.FinishOAuth2Flow(ctx, w, req)
 	if err != nil {
@@ -1009,12 +1015,11 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		//if anything goes wrong, die:
+		//if anything goes wrong, carry on.:
 		err = DownloadChartsLoop(client, ctx, v.Symbol, v.OpenDate, v.CloseDate, strconv.FormatInt(id, 10))
 		if err != nil {
-			tx.Rollback()
-			http.Error(w, fmt.Sprintf("We failed to download a chart: %s\n", err.Error()), 500)
-			return
+			// tx.Rollback()
+			fmt.Println(fmt.Sprintf("We failed to download a chart for %s: %s\n",v.Symbol, err.Error()))
 		}
 		//because we are going to call TD Ameritrade a bunch, we have to slow down...
 		p.Sleep()
@@ -1827,7 +1832,7 @@ func GetOpenPositions() ([]TransactionRow, error) {
 	queryString := string(bs)
 	rows, err := db.db.Query(queryString)
 	if err != nil {
-		return nil, fmt.Errorf("Error during query: %s\n")
+		return nil, fmt.Errorf("Error during query: %s\n", err.Error())
 	}
 
 	tRows := make([]TransactionRow, 0)
