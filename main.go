@@ -1824,13 +1824,17 @@ func GetOpenPositions() ([]TransactionRow, error) {
 		return nil, fmt.Errorf("Failed to open sql file: %s\n", err.Error())
 	}
 
+	tRows := make([]TransactionRow, 0)
 	queryString := string(bs)
 	rows, err := db.db.Query(queryString)
 	if err != nil {
-		return nil, fmt.Errorf("Error during query: %s\n")
+		if err == sql.ErrNoRows {
+			return tRows, nil
+		} else {
+			return nil, fmt.Errorf("Error during query: %s\n")
+		}
 	}
 
-	tRows := make([]TransactionRow, 0)
 	for rows.Next() {
 		var t = TransactionRow{}
 		err := rows.Scan(&t.OrderID, &t.Type, &t.ClearingReferenceNumber, &t.SubAccount, &t.SettlementDate, &t.SMA, &t.RequirementReallocationAmount, &t.DayTradeBuyingPowerEffect, &t.NetAmount, &t.TransactionDate, &t.OrderDate, &t.TransactionSubType, &t.TransactionID, &t.CashBalanceEffectFlag, &t.Description, &t.ACHStatus, &t.AccruedInterest, &t.Fees, &t.AccountID, &t.Amount, &t.Price, &t.Cost, &t.ParentOrderKey, &t.ParentChildIndicator, &t.Instruction, &t.PositionEffect, &t.Symbol, &t.UnderlyingSymbol, &t.OptionExpirationDate, &t.OptionStrikePrice, &t.PutCall, &t.CUSIP, &t.InstrumentDescription, &t.AssetType, &t.BondMaturityDate, &t.BondInterestRate)
