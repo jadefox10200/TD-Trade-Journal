@@ -25,7 +25,9 @@
 				</div>
 				{{if .HasVideo}}
 				<div class="ui container" id="AVcontainer">
-					<button class="ui button basic" href={{printf "/AV/%s.mp4" .DateRaw}} TARGET=QUICKTIMEPLAYER.app><i class="play circle icon"></i>Play Recording</button>
+					<a href={{printf "/AV/%s.mp4" .DateRaw}} TARGET=QUICKTIMEPLAYER>
+					<button class="ui button basic"><i class="play circle icon"></i>Play Recording</button>
+				</a>
 				</div>
 				{{end}}
 			</div>
@@ -54,7 +56,8 @@
 				<thead>
 					<tr>
 						<th>Symbol</th>
-						<th>Volume</th>
+						<th>Avg Entry</th>
+						<th>Avg Exit</th>
 						<th>P&L</th>
 						<th>Win/Loss %</th>
 						<th>Open Date</th>
@@ -226,7 +229,10 @@
 					}
 					row += '</td>'
 					+ '<td>'
-						+ data.Quantity
+						+ data.AvgEntryPrice
+					+ '</td>'
+					+ '<td>'
+						+ data.AvgExitPrice
 					+ '</td>'
 					+ '<td>$'
 						+ data.ProfitLoss

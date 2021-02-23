@@ -40,6 +40,7 @@ import (
 //TODO: CREATE JOINS IN SQL TO PULL NOTES DATA RATHER THAN RUNNING MULTIPLE QUIERIES...
 
 //BUG: FIX VOLUME FOR EACH DAY. MIGHT HAVE TO GO BACK TO PULLING TRANSACTIONS OR JUST PULLING TRANSACTIONS BASED ON THE TRADEID LINKED TO THE DAY.
+//BUG: WHEN PLACING AN ORDER, IT MIGHT GET SPLIT UP INTO MULTIPLE TRANSACTIONS. THEREFORE, DURING SAVE WE WILL HAVE TO GROUP THEM ON THE SQL SIDE AND SUM AVERAGE THE TRANSACTION PRICE. THE ISSUE IS THAT TWO TRANSACTIONS WILL HAVE THE SAME ORDER ID. WHEN THIS HAPPENS, IT WILL ONLY SAVE ONE OF THE TRANSACTIONS.
 
 type DbDao struct {
 	db *sql.DB
@@ -112,6 +113,7 @@ func main() {
 	http.HandleFunc("/getTradesForDayView", GetTradesForDayView)
 	http.HandleFunc("/saveNoteDay", SaveNoteDay)
 	http.HandleFunc("/saveTradeNote", SaveTradeNote)
+	http.HandleFunc("/getPLChart", GetPLChart)
 
 	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
 	http.HandleFunc("/downloadCharts", handlers.DownloadCharts)
@@ -1296,7 +1298,7 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	quote, resp, err := client.Quotes.GetQuotes(ctx, ticker[0])
+	quote, _, err := client.Quotes.GetQuotes(ctx, ticker[0])
 	if err != nil {
 		w.Write([]byte(err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1311,7 +1313,8 @@ func (h *TDHandlers) Quote(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Write(body)
-	w.WriteHeader(resp.StatusCode)
+	// w.WriteHeader(resp.StatusCode)
+	return
 
 }
 
@@ -1950,16 +1953,101 @@ func DBDataExist(query string, arg ...interface{}) (bool, error) {
 	return exist, nil
 }
 
+func GetPLChart(w http.ResponseWriter, r *http.Request) {
+
+	weeks := r.URL.Query().Get("weeks")
+
+	i, err := strconv.Atoi(weeks)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to convert weeks to int: %s", err.Error()), 400)
+		return
+	}
+
+	query, err := ioutil.ReadFile("sql/weeklyProfitStat.sql")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open the weeklyProfitStat.sql", err.Error()), 500)
+		return
+	}
+
+	rows, err := db.db.Query(string(query), i)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to get rows", err.Error()), 500)
+		return
+	}
+
+	var points = make([]StatPoint, 0)
+	for rows.Next() {
+		var sp = StatPoint{}
+		err = rows.Scan(&sp.Date, &sp.GI)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to scan data point: %s", err.Error()), 500)
+			return
+		}
+		points = append(points, sp)
+	}
+
+	err = json.NewEncoder(w).Encode(points)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode points: %s", err.Error()), 500)
+		return
+	}
+
+	return
+}
+
+type StatPoint struct {
+	Date string  `json:"x"`
+	GI   float64 `json:"y"`
+}
+
+func CheckSymbolId(id int) bool {
+	if id > 0 {
+		return true
+	}
+	return false
+}
+
 func Abs(cost float64) float64 {
 
 	return math.Abs(cost)
 }
 
+func GetTickerPrice(symbol string) float64 {
+
+	resp, err := http.Get(fmt.Sprintf("http://localhost%s/quote?ticker=%s", port, symbol))
+	if err != nil {
+		fmt.Printf("Error GetTickerPrice:%s", err.Error())
+		return 0.0
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error GetTickerPrice:%s", err.Error())
+		return 0.0
+	}
+
+	quotes := make(tdameritrade.Quotes)
+	err = json.Unmarshal(body, &quotes)
+	if err != nil {
+		fmt.Printf("Error GetTickerPrice:%s", err.Error())
+		return 0.0
+	}
+
+	q := quotes[symbol]
+
+	return q.Mark
+}
+
 func renderTemplate(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
 	// parse templates
 	tpl := template.New("").Funcs(template.FuncMap{
-		"abs":         Abs,
-		"MultPercent": MultPercent,
+		"abs":            Abs,
+		"MultPercent":    MultPercent,
+		"CheckSymbolId":  CheckSymbolId,
+		"GetTickerPrice": GetTickerPrice,
 	})
 	tpl, err := tpl.ParseGlob("templates/*.gohtml")
 	if err != nil {
