@@ -67,12 +67,20 @@
 			</table>
 		</div>
 
+		<div>
+			<select id="intraDayDropDown" class="ui simple droodown menu" style="float: right;">
+				<option value="entry" class="item" selected>Entry</option>
+				<option value="exit" class="item">Exit</option>
+			</select>
+		</div>
+
 		<div id="intraDayCharts" class="chart"></div>
+
 		<div class="ui clearing divider"></div>
 
 		<div>
 			<button class="ui black basic button" id="download" style="float: left;">Update Chart Data</button>
-			<select class="ui simple droodown menu" style="float: right;">
+			<select id="dailyDropDown" class="ui simple dropdown menu" style="float: right;">
 				<option value="4" class="item" selected>3 Months</option>
 				<option value="2" class="item">6 Months</option>
 		    	<option value="1" class="item">1 Year</option>
@@ -159,10 +167,27 @@
 
 		})
 
+		// $("#intraDayDropDown").change(function () {
+		// 	console.log("ran")
+		//     var str = "";
+		//     $( "select option:selected" ).each(function() {
+		// 		$("#dailyChart").html("")
+		// 		var path = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/"+ $(this).val() + ".csv"
+		// 		chart($(this).text(), path)
+		//     });
+	  	// })
+
+		$("#intraDayDropDown").change(function () {
+			$("#intraDayCharts").html("")
+			var path = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/"+ this.value + ".csv"
+			chart($(this).find(":selected").text(), path)
+	  	})
+		// var end = this.value;
+
 		//SELECT BOX FOR DAILY CHART
-		$("select").change(function () {
+		$("#dailyDropDown").change(function () {
 		    var str = "";
-		    $( "select option:selected" ).each(function() {
+		    $( "#dailyDropDown option:selected" ).each(function() {
 				$("#dailyChart").html("")
 				var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
 				dailyChart($(this).text(), dailyPath, $(this).val())
@@ -193,228 +218,451 @@
 		});
 
 		//DRAWING THE ENTRY AND EXIT CHARTS:
-		function chart(symbol, csvPath, fullWidth, fullHeight) {
-			 var margin = {top: 20, right: 30, bottom: 30, left: 30},
-					 width = fullWidth - margin.left - margin.right,
-					 height = fullHeight - margin.top - margin.bottom,
-					 volumeHeight = fullHeight*.25;
+		function chart(symbol, csvPath) {
+			var dim = {
+			        width: 960, height: 500,
+			        margin: { top: 20, right: 50, bottom: 30, left: 50 },
+			        ohlc: { height: 305 },
+			        indicator: { height: 65, padding: 5 }
+			    };
+			    dim.plot = {
+			        width: dim.width - dim.margin.left - dim.margin.right,
+			        height: dim.height - dim.margin.top - dim.margin.bottom
+			    };
+			    dim.indicator.top = dim.ohlc.height+dim.indicator.padding;
+			    dim.indicator.bottom = dim.indicator.top+dim.indicator.height+dim.indicator.padding;
 
-			 // var parseDate = d3.timeParse("%d-%b-%y");
-			 var parseDate = d3.timeParse("%d-%b-%y %H:%M");
+			    var indicatorTop = d3.scaleLinear()
+			            .range([dim.indicator.top, dim.indicator.bottom]);
 
-			 var zoom = d3.zoom()
-					 .on("zoom", zoomed);
+			    // var parseDate = d3.timeParse("%d-%b-%y");
+				var parseDate = d3.timeParse("%d-%b-%y %H:%M");
+				var dateFormat = d3.timeFormat("%d-%b-%y %H:%M");
+				var valueFormat = d3.format(',.2f');
 
-			 var x = techan.scale.financetime()
-					 .range([0, width]);
+			    var zoom = d3.zoom()
+			            .on("zoom", zoomed);
 
-			 var y = d3.scaleLinear()
-					 .range([height, 0]);
+			    var x = techan.scale.financetime()
+			            .range([0, dim.plot.width]);
 
-			 var yPercent = y.copy();   // Same as y at this stage, will get a different domain later
-
-			 var yVolume = d3.scaleLinear()
-					 .range([height, height - volumeHeight]);
-
-			 var yInit, yPercentInit, zoomableInit;
-
-			 var candlestick = techan.plot.candlestick()
-					 .xScale(x)
-					 .yScale(y);
-
-			var tradearrow = techan.plot.tradearrow()
-	             .xScale(x)
-	             .yScale(y)
-	             .y(function(d) {
-					 // console.log("D", d)
-	                 // Display the buy and sell arrows a bit above and below the price, so the price is still visible
-	                 if(d.type === 'BUY') return y(d.price)+25;
-	                 if(d.type === 'SELL') return y(d.price)-25;
-	                 else return y(d.price);
-	             })
-				 .orient(function(d) { return d.type.startsWith("BUY") ? "up" : "down"; })
+			    var y = d3.scaleLinear()
+			            .range([dim.ohlc.height, 0]);
 
 
-			 // var sma0 = techan.plot.sma()
-				// 	 .xScale(x)
-				// 	 .yScale(y);
-			 //
-			 // var sma1 = techan.plot.sma()
-				// 	 .xScale(x)
-				// 	 .yScale(y);
-			 //
-			 // var ema2 = techan.plot.ema()
-				// 	 .xScale(x)
-				// 	 .yScale(y);
+			    var yPercent = y.copy();   // Same as y at this stage, will get a different domain later
 
-			 var volume = techan.plot.volume()
-					 .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
-					 .xScale(x)
-					 .yScale(yVolume);
+			    var yInit, yPercentInit, zoomableInit;
 
-			 var xAxis = d3.axisBottom(x)
-					 .ticks(4);
+			    var yVolume = d3.scaleLinear()
+			            .range([y(0), y(0.2)]);
 
-			 var yAxis = d3.axisRight(y)
-					 .ticks(4);
+			    var candlestick = techan.plot.candlestick()
+			            .xScale(x)
+			            .yScale(y);
 
-			 var percentAxis = d3.axisLeft(yPercent)
-					 .ticks(4)
-					 .tickFormat(d3.format('+.1%'));
+				var tradearrow = techan.plot.tradearrow()
+					.xScale(x)
+					.yScale(y)
+					.y(function(d) {
+						// console.log("D", d)
+						// Display the buy and sell arrows a bit above and below the price, so the price is still visible
+						if(d.type === 'BUY') return y(d.price)+25;
+						if(d.type === 'SELL') return y(d.price)-25;
+						else return y(d.price);
+					})
+					.orient(function(d) { return d.type.startsWith("BUY") ? "up" : "down"; })
+					.on("mouseenter", enterArrow)
+   		         	.on("mouseout", outArrow);
 
-			 var volumeAxis = d3.axisRight(yVolume)
-					 .ticks(2)
-					 .tickFormat(d3.format(",.3s"));
+			    var sma0 = techan.plot.sma()
+			            .xScale(x)
+			            .yScale(y);
+
+			    var sma1 = techan.plot.sma()
+			            .xScale(x)
+			            .yScale(y);
+
+			    var ema2 = techan.plot.ema()
+			            .xScale(x)
+			            .yScale(y);
+
+			    var volume = techan.plot.volume()
+			            .accessor(candlestick.accessor())   // Set the accessor to a ohlc accessor so we get highlighted bars
+			            .xScale(x)
+			            .yScale(yVolume);
+
+			    var xAxis = d3.axisBottom(x);
+
+			    var timeAnnotation = techan.plot.axisannotation()
+			            .axis(xAxis)
+			            .orient('bottom')
+			            .format(d3.timeFormat('%H:%M'))
+			            .width(45)
+			            .translate([0, dim.plot.height]);
+
+			    var yAxis = d3.axisRight(y);
+
+			    var ohlcAnnotation = techan.plot.axisannotation()
+			            .axis(yAxis)
+			            .orient('right')
+			            .format(d3.format(',.2f'))
+			            .translate([x(1), 0]);
+
+			    var closeAnnotation = techan.plot.axisannotation()
+			            .axis(yAxis)
+			            .orient('right')
+			            .accessor(candlestick.accessor())
+			            .format(d3.format(',.2f'))
+			            .translate([x(1), 0]);
+
+			    var percentAxis = d3.axisLeft(yPercent)
+			            .tickFormat(d3.format('+.1%'));
+
+			    var percentAnnotation = techan.plot.axisannotation()
+			            .axis(percentAxis)
+			            .orient('left');
+
+			    var volumeAxis = d3.axisRight(yVolume)
+			            .ticks(3)
+			            .tickFormat(d3.format(",.3s"));
+
+			    var volumeAnnotation = techan.plot.axisannotation()
+			            .axis(volumeAxis)
+			            .orient("right")
+			            .width(35);
+
+			    var macdScale = d3.scaleLinear()
+			            .range([indicatorTop(0)+dim.indicator.height, indicatorTop(0)]);
+
+			    var rsiScale = macdScale.copy()
+			            .range([indicatorTop(1)+dim.indicator.height, indicatorTop(1)]);
+
+			    var macd = techan.plot.macd()
+			            .xScale(x)
+			            .yScale(macdScale);
+
+			    var macdAxis = d3.axisRight(macdScale)
+			            .ticks(3);
+
+			    var macdAnnotation = techan.plot.axisannotation()
+			            .axis(macdAxis)
+			            .orient("right")
+			            .format(d3.format(',.2f'))
+			            .translate([x(1), 0]);
+
+			    var macdAxisLeft = d3.axisLeft(macdScale)
+			            .ticks(3);
+
+			    var macdAnnotationLeft = techan.plot.axisannotation()
+			            .axis(macdAxisLeft)
+			            .orient("left")
+			            .format(d3.format(',.2f'));
+
+			    var rsi = techan.plot.rsi()
+			            .xScale(x)
+			            .yScale(rsiScale);
+
+			    var rsiAxis = d3.axisRight(rsiScale)
+			            .ticks(3);
+
+			    var rsiAnnotation = techan.plot.axisannotation()
+			            .axis(rsiAxis)
+			            .orient("right")
+			            .format(d3.format(',.2f'))
+			            .translate([x(1), 0]);
+
+			    var rsiAxisLeft = d3.axisLeft(rsiScale)
+			            .ticks(3);
+
+			    var rsiAnnotationLeft = techan.plot.axisannotation()
+			            .axis(rsiAxisLeft)
+			            .orient("left")
+			            .format(d3.format(',.2f'));
+
+			    var ohlcCrosshair = techan.plot.crosshair()
+			            .xScale(timeAnnotation.axis().scale())
+			            .yScale(ohlcAnnotation.axis().scale())
+			            .xAnnotation(timeAnnotation)
+			            .yAnnotation([ohlcAnnotation, percentAnnotation, volumeAnnotation])
+			            .verticalWireRange([0, dim.plot.height]);
+
+			    var macdCrosshair = techan.plot.crosshair()
+			            .xScale(timeAnnotation.axis().scale())
+			            .yScale(macdAnnotation.axis().scale())
+			            .xAnnotation(timeAnnotation)
+			            .yAnnotation([macdAnnotation, macdAnnotationLeft])
+			            .verticalWireRange([0, dim.plot.height]);
+
+			    var rsiCrosshair = techan.plot.crosshair()
+			            .xScale(timeAnnotation.axis().scale())
+			            .yScale(rsiAnnotation.axis().scale())
+			            .xAnnotation(timeAnnotation)
+			            .yAnnotation([rsiAnnotation, rsiAnnotationLeft])
+			            .verticalWireRange([0, dim.plot.height]);
+
+			    var svg = d3.select("#intraDayCharts").append("svg")
+			            .attr("width", dim.width)
+			            .attr("height", dim.height);
+
+				var valueText = svg.append('text')
+			        .style("text-anchor", "end")
+			        .attr("class", "coords")
+			        .attr("x", dim.width - 55)
+			        .attr("y", 35);
+
+			    var defs = svg.append("defs");
+
+			    defs.append("clipPath")
+			            .attr("id", "ohlcClip")
+			        .append("rect")
+			            .attr("x", 0)
+			            .attr("y", 0)
+			            .attr("width", dim.plot.width)
+			            .attr("height", dim.ohlc.height);
+
+			    defs.selectAll("indicatorClip").data([0, 1])
+			        .enter()
+			            .append("clipPath")
+			            .attr("id", function(d, i) { return "indicatorClip-" + i; })
+			        .append("rect")
+			            .attr("x", 0)
+			            .attr("y", function(d, i) { return indicatorTop(i); })
+			            .attr("width", dim.plot.width)
+			            .attr("height", dim.indicator.height);
+
+			    svg = svg.append("g")
+			            .attr("transform", "translate(" + dim.margin.left + "," + dim.margin.top + ")");
+
+			    svg.append('text')
+			            .attr("class", "symbol")
+			            .attr("x", 20)
+			            .text(" (" + symbol + ")");
+
+			    svg.append("g")
+			            .attr("class", "x axis")
+			            .attr("transform", "translate(0," + dim.plot.height + ")");
+
+			    var ohlcSelection = svg.append("g")
+			            .attr("class", "ohlc")
+			            .attr("transform", "translate(0,0)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "axis")
+			            .attr("transform", "translate(" + x(1) + ",0)")
+			        .append("text")
+			            .attr("transform", "rotate(-90)")
+			            .attr("y", -12)
+			            .attr("dy", ".71em")
+			            .style("text-anchor", "end")
+			            .text("Price ($)");
+
+//marker
+			    ohlcSelection.append("g")
+			            .attr("class", "close annotation up");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "volume")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "candlestick")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "indicator sma ma-0")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "indicator sma ma-1")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "indicator ema ma-2")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "percent axis");
+
+			    ohlcSelection.append("g")
+			            .attr("class", "volume axis");
+
+			    var indicatorSelection = svg.selectAll("svg > g.indicator").data(["macd", "rsi"]).enter()
+			             .append("g")
+			                .attr("class", function(d) { return d + " indicator"; });
+
+			    indicatorSelection.append("g")
+			            .attr("class", "axis right")
+			            .attr("transform", "translate(" + x(1) + ",0)");
+
+			    indicatorSelection.append("g")
+			            .attr("class", "axis left")
+			            .attr("transform", "translate(" + x(0) + ",0)");
+
+			    indicatorSelection.append("g")
+			            .attr("class", "indicator-plot")
+			            .attr("clip-path", function(d, i) { return "url(#indicatorClip-" + i + ")"; });
+
+			    // Add trendlines and other interactions last to be above zoom pane
+			    svg.append('g')
+			            .attr("class", "crosshair ohlc");
+
+			    svg.append("g")
+			            .attr("class", "tradearrow")
+			            .attr("clip-path", "url(#ohlcClip)");
+
+			    svg.append('g')
+			            .attr("class", "crosshair macd");
+
+			    svg.append('g')
+			            .attr("class", "crosshair rsi");
+
+			    d3.select("button").on("click", reset);
+
+			    d3.csv(csvPath, function(error, data) {
+			        var accessor = candlestick.accessor(),
+			            indicatorPreRoll = 33;  // Don't show where indicators don't have data
+
+			        data = data.map(function(d) {
+			            return {
+			                date: parseDate(moment(parseInt(d.Datetime, 10)).local().format('D-MMM-YY H:m')),
+			                open: +d.Open,
+			                high: +d.High,
+			                low: +d.Low,
+			                close: +d.Close,
+			                volume: +d.Volume
+			            };
+			        }).sort(function(a, b) { return d3.ascending(accessor.d(a), accessor.d(b)); });
+
+			        x.domain(techan.scale.plot.time(data).domain());
+			        y.domain(techan.scale.plot.ohlc(data.slice(indicatorPreRoll)).domain());
+			        yPercent.domain(techan.scale.plot.percent(y, accessor(data[indicatorPreRoll])).domain());
+			        yVolume.domain(techan.scale.plot.volume(data).domain());
+
+			        // var trendlineData = [
+			        //     { start: { date: new Date(2014, 2, 11), value: 72.50 }, end: { date: new Date(2014, 5, 9), value: 63.34 } },
+			        //     { start: { date: new Date(2013, 10, 21), value: 43 }, end: { date: new Date(2014, 2, 17), value: 70.50 } }
+			        // ];
+					//
+			        // var supstanceData = [
+			        //     { start: new Date(2014, 2, 11), end: new Date(2014, 5, 9), value: 63.64 },
+			        //     { start: new Date(2013, 10, 21), end: new Date(2014, 2, 17), value: 55.50 }
+			        // ];
+
+					var check = false
 
 
-
-			 var svg = d3.select("#intraDayCharts").append("svg")
-					 .attr("width", width + margin.left + margin.right)
-					 .attr("height", height + margin.top + margin.bottom)
-					 .append("g")
-					 .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-			 svg.append("clipPath")
-					 .attr("id", "clip")
-					 .append("rect")
-					 .attr("x", 0)
-					 .attr("y", y(1))
-					 .attr("width", width)
-					 .attr("height", y(0) - y(1));
-
-			 svg.append('text')
-					 .attr("class", "symbol")
-					 .attr("x", 5)
-					 .text(" (" + symbol + ")");
-
-			 svg.append("g")
-					 .attr("class", "volume")
-					 .attr("clip-path", "url(#clip)");
-
-			 svg.append("g")
-					 .attr("class", "candlestick")
-					 .attr("clip-path", "url(#clip)");
-
-			svg.append("g")
-	             .attr("class", "tradearrow")
-	             .attr("clip-path", "url(#ohlcClip)");
-
-			 svg.append("g")
-					 .attr("class", "x axis")
-					 .attr("transform", "translate(0," + height + ")");
-
-			 svg.append("g")
-					 .attr("class", "y axis")
-					 .attr("transform", "translate(" + width + ",0)");
-
-			 svg.append("g")
-					 .attr("class", "percent axis");
-
-			 svg.append("g")
-					 .attr("class", "volume axis");
-
-			 svg.append("rect")
-					 .attr("class", "pane")
-					 .attr("width", width)
-					 .attr("height", height)
-					 .call(zoom);
-
-			 d3.csv(csvPath, function (error, data) {
-				 var accessor = candlestick.accessor(),
-					 indicatorPreRoll = 33;  // Don't show where indicators don't have data
-
-				 data = data.map(function (d) {
-					 return {
-						 date: parseDate(moment(parseInt(d.Datetime, 10)).local().format('D-MMM-YY H:m')),
-						 open: +d.Open,
-						 high: +d.High,
-						 low: +d.Low,
-						 close: +d.Close,
-						 volume: +d.Volume
-					 };
-				 }).sort(function (a, b) {
-					 return d3.ascending(accessor.d(a), accessor.d(b));
-				 });
-
-				 x.domain(techan.scale.plot.time(data, accessor).domain());
-				 y.domain(techan.scale.plot.ohlc(data.slice(indicatorPreRoll), accessor).domain());
-				 yPercent.domain(techan.scale.plot.percent(y, accessor(data[indicatorPreRoll])).domain());
-				 yVolume.domain(techan.scale.plot.volume(data, accessor.v).domain());
-
-				// check if these trades are for this day:
-				var check = false
+					var chartStart = moment(data[0].date)
+					var chartEnd = moment(data[data.length -1 ].date)
 
 
-				var chartStart = moment(data[0].date)
-				var chartEnd = moment(data[data.length -1 ].date)
-
-
-				var trades = []
-				{{range .Executions}}
-					var orderDate = moment({{ .OrderDate}}, "DD-MM-YYYY hh:mm:ss")
-					if ( (orderDate.isAfter(chartStart) && orderDate.isBefore(chartEnd))  || (orderDate.isSame(chartStart)) || (orderDate.isSame(chartEnd)) ) {
-						var item = {
-							date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')),
-							type: {{.Instruction}},
-							price: {{.Price}},
-							quantity: {{.Quantity}}
+					var trades = []
+					{{range .Executions}}
+						var orderDate = moment({{ .OrderDate}}, "DD-MM-YYYY hh:mm:ss")
+						if ( (orderDate.isAfter(chartStart) && orderDate.isBefore(chartEnd))  || (orderDate.isSame(chartStart)) || (orderDate.isSame(chartEnd)) ) {
+							var item = {
+								date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')),
+								type: {{.Instruction}},
+								price: {{.Price}},
+								quantity: {{.Quantity}}
+							}
+							trades.push(item)
 						}
-						trades.push(item)
-					}
-				{{end}}
+					{{end}}
 
-				//
-				// var trades = [
-				// 	{{range .Executions}}
-				//
-				// 		{date: parseDate(moment({{.OrderDate}}, "DD-MM-YYYY hh:mm:ss").format('D-MMM-YY H:m')), type: {{.Instruction}}, price: {{.Price}}, quantity: {{.Quantity}} },
-				// 	{{end}}
-				// ]
+					{{range .Executions}}
+						svg.append("g")
+							.attr("class", "y annotation left " + {{.Instruction}})
+							//left annotations:
+							.datum([{value: {{.Price}} }]) // 74 should not be rendered
+							.call(ohlcAnnotation);
+					{{end}}
 
-				 svg.select("g.candlestick").datum(data).call(candlestick);
-				 svg.select("g.volume").datum(data).call(volume);
+			        var macdData = techan.indicator.macd()(data);
+			        macdScale.domain(techan.scale.plot.macd(macdData).domain());
+			        var rsiData = techan.indicator.rsi()(data);
+			        rsiScale.domain(techan.scale.plot.rsi(rsiData).domain());
 
-				 // svg.select("g.sma.ma-0").datum(techan.indicator.sma().period(10)(data)).call(sma0);
-				 // svg.select("g.sma.ma-1").datum(techan.indicator.sma().period(20)(data)).call(sma1);
-				 // svg.select("g.ema.ma-2").datum(techan.indicator.ema().period(50)(data)).call(ema2);
+			        svg.select("g.candlestick").datum(data).call(candlestick);
+			        svg.select("g.close.annotation").datum([data[data.length-1]]).call(closeAnnotation);
+			        svg.select("g.volume").datum(data).call(volume);
+			        svg.select("g.sma.ma-0").datum(techan.indicator.sma().period(10)(data)).call(sma0);
+			        svg.select("g.sma.ma-1").datum(techan.indicator.sma().period(20)(data)).call(sma1);
+			        svg.select("g.ema.ma-2").datum(techan.indicator.ema().period(50)(data)).call(ema2);
+			        svg.select("g.macd .indicator-plot").datum(macdData).call(macd);
+			        svg.select("g.rsi .indicator-plot").datum(rsiData).call(rsi);
+					// svg.select("g.right.annotation").datum([data[data.length-1]]).call(ohlcAnnotation);
 
-				 svg.select("g.tradearrow").datum(trades).call(tradearrow);
+			        svg.select("g.crosshair.ohlc").call(ohlcCrosshair).call(zoom);
+			        svg.select("g.crosshair.macd").call(macdCrosshair).call(zoom);
+			        svg.select("g.crosshair.rsi").call(rsiCrosshair).call(zoom);
+			        // svg.select("g.trendlines").datum(trendlineData).call(trendline).call(trendline.drag);
+			        // svg.select("g.supstances").datum(supstanceData).call(supstance).call(supstance.drag);
 
-				 zoomableInit = x.zoomable().domain([indicatorPreRoll, data.length]).copy(); // Zoom in a little to hide indicator preroll
-				 yInit = y.copy();
-				 yPercentInit = yPercent.copy();
+			        svg.select("g.tradearrow").datum(trades).call(tradearrow);
 
-				 draw();
-			 });
+			        // Stash for zooming
+			        zoomableInit = x.zoomable().domain([indicatorPreRoll, data.length]).copy(); // Zoom in a little to hide indicator preroll
+			        yInit = y.copy();
+			        yPercentInit = yPercent.copy();
 
-			 function reset() {
-				 zoom.scale(1);
-				 zoom.translate([0, 0]);
-				 draw();
-			 }
+			        draw();
+			    });
 
-			 function zoomed() {
-				 x.zoomable().domain(d3.event.transform.rescaleX(zoomableInit).domain());
-				 y.domain(d3.event.transform.rescaleY(yInit).domain());
-				 yPercent.domain(d3.event.transform.rescaleY(yPercentInit).domain());
+			    function reset() {
+			        zoom.scale(1);
+			        zoom.translate([0,0]);
+			        draw();
+			    }
 
-				 draw();
-			 }
+			    function zoomed() {
+			        x.zoomable().domain(d3.event.transform.rescaleX(zoomableInit).domain());
+			        y.domain(d3.event.transform.rescaleY(yInit).domain());
+			        yPercent.domain(d3.event.transform.rescaleY(yPercentInit).domain());
 
-			 function draw() {
-				 svg.select("g.x.axis").call(xAxis);
-				 svg.select("g.y.axis").call(yAxis);
-				 svg.select("g.volume.axis").call(volumeAxis);
-				 svg.select("g.percent.axis").call(percentAxis);
+			        draw();
+			    }
 
-				 // We know the data does not change, a simple refresh that does not perform data joins will suffice.
-				 svg.select("g.candlestick").call(candlestick.refresh);
-				 svg.select("g.volume").call(volume.refresh);
-				 svg.select("g.tradearrow").call(tradearrow.refresh);
-				 // svg.select("g.sma.ma-0").call(sma0.refresh);
-				 // svg.select("g.sma.ma-1").call(sma1.refresh);
-				 // svg.select("g.ema.ma-2").call(ema2.refresh);
-			 }
+				function enterArrow(d) {
+					valueText.style("display", "inline");
+					refreshText(d);
+				}
+
+				function outArrow() {
+					valueText.style("display", "none");
+				}
+
+				function refreshText(d) {
+					valueText.text("Trade: " + dateFormat(d.date) + ", " + d.type + ", " + valueFormat(d.price));
+				}
+
+			    function draw() {
+			        svg.select("g.x.axis").call(xAxis);
+			        svg.select("g.ohlc .axis").call(yAxis);
+			        svg.select("g.volume.axis").call(volumeAxis);
+			        svg.select("g.percent.axis").call(percentAxis);
+			        svg.select("g.macd .axis.right").call(macdAxis);
+			        svg.select("g.rsi .axis.right").call(rsiAxis);
+			        svg.select("g.macd .axis.left").call(macdAxisLeft);
+			        svg.select("g.rsi .axis.left").call(rsiAxisLeft);
+
+			        // We know the data does not change, a simple refresh that does not perform data joins will suffice.
+			        svg.select("g.candlestick").call(candlestick.refresh);
+			        svg.select("g.close.annotation").call(closeAnnotation.refresh);
+			        svg.select("g.volume").call(volume.refresh);
+			        svg.select("g .sma.ma-0").call(sma0.refresh);
+			        svg.select("g .sma.ma-1").call(sma1.refresh);
+			        svg.select("g .ema.ma-2").call(ema2.refresh);
+			        svg.select("g.macd .indicator-plot").call(macd.refresh);
+			        svg.select("g.rsi .indicator-plot").call(rsi.refresh);
+			        svg.select("g.crosshair.ohlc").call(ohlcCrosshair.refresh);
+			        svg.select("g.crosshair.macd").call(macdCrosshair.refresh);
+			        svg.select("g.crosshair.rsi").call(rsiCrosshair.refresh);
+			        svg.selectAll("g.left.annotation.BUY").call(ohlcAnnotation.refresh);
+					svg.selectAll("g.left.annotation.SELL").call(ohlcAnnotation.refresh);
+			        // svg.select("g.supstances").call(supstance.refresh);
+			        svg.select("g.tradearrow").call(tradearrow.refresh);
+			    }
 		}
 
 
@@ -608,7 +856,6 @@
 	                .attr("transform", "translate(" + width + ",0)")
 	                .call(yRightAxis);
 
-
 				{{range .Executions}}
 					svg.append("g")
 						.attr("class", "y annotation left " + {{.Instruction}})
@@ -709,8 +956,8 @@
 		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"
 		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv"
 		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
-		chart("Entry", entryPath,500, 300);
-		chart("Exit", exitPath,500, 300);
+		chart("Entry", entryPath);
+		// chart("Exit", exitPath,500, 300);
 
 		 //chartTimeFrame is the following:
 		 //1 = 1 year
