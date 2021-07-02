@@ -146,7 +146,7 @@ type Note struct {
 
 func LogOutTD(w http.ResponseWriter, r *http.Request) {
 
-	deleteIt := `select * from tokenTable;`
+	deleteIt := `delete from tokenTable;`
 	_, err := db.db.Exec(deleteIt)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to delete from tokenTable: %s\n", err.Error()), 500)
