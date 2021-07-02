@@ -116,6 +116,7 @@ func main() {
 	http.HandleFunc("/saveNoteDay", SaveNoteDay)
 	http.HandleFunc("/saveTradeNote", SaveTradeNote)
 	http.HandleFunc("/getPLChart", GetPLChart)
+	http.HandleFunc("/logOut", LogOutTD)
 
 	http.HandleFunc("/getEventsByQuery/", GetEventsByQuery)
 	http.HandleFunc("/downloadCharts", handlers.DownloadCharts)
@@ -132,6 +133,8 @@ func main() {
 
 	http.HandleFunc("/", handlers.Index)
 
+	fmt.Printf("Running on %s\n", port)
+
 	log.Fatal(http.ListenAndServe(port, nil))
 }
 
@@ -139,6 +142,18 @@ type Note struct {
 	Id       int    `schema:Id`
 	NoteDate string `schema:"NoteDate"`
 	NoteData string `schema:"NoteData"`
+}
+
+func LogOutTD(w http.ResponseWriter, r *http.Request) {
+
+	deleteIt := `select * from tokenTable;`
+	_, err := db.db.Exec(deleteIt)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete from tokenTable: %s\n", err.Error()), 500)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func SaveTradeNote(w http.ResponseWriter, r *http.Request) {
@@ -382,11 +397,30 @@ const TimeFormat = "Mon, 02 Jan 2006 15:04:05 GMT"
 
 func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter, req *http.Request) error {
 
+	fmt.Println("Trying to store token...")
+	fmt.Println(token.AccessToken)
+	fmt.Println(token.RefreshToken)
+
 	//USING DB, MAINTAINS LOG IN STATE EVEN DURING SERVER SHUTDOWN.THIS IS IDEAL FOR TESTING WHERE MANY SHUT DOWNS AND BUILDS ARE NEEDED.
-	updateStr := `UPDATE tokenTable SET
-		accessToken = ?,
-		refreshToken = ?,
-		expiry = ?`
+	tokenCheck := `select * from tokenTable`
+	tokenExist, err := DBDataExist(tokenCheck)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to check for token in DB: %s\n", err.Error()), 500)
+		return fmt.Errorf("Failed to check for token in DB: %s\n", err.Error())
+	}
+
+	var updateStr string
+	if tokenExist {
+		updateStr = `UPDATE tokenTable SET
+			accessToken = ?,
+			refreshToken = ?,
+			expiry = ?`
+	} else {
+		updateStr = `insert into tokenTable SET
+			accessToken = ?,
+			refreshToken = ?,
+			expiry = ?`
+	}
 
 	result, err := db.db.Exec(updateStr, token.AccessToken, token.RefreshToken, token.Expiry.Format("2006-01-02 15:04:05.999999999 -0700 MST"))
 	if err != nil {
@@ -1958,12 +1992,16 @@ func DBDataExist(query string, arg ...interface{}) (bool, error) {
 
 func GetPLChart(w http.ResponseWriter, r *http.Request) {
 
-	weeks := r.URL.Query().Get("weeks")
+	weeks, ok := r.URL.Query()["weeks"]
 
-	i, err := strconv.Atoi(weeks)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to convert weeks to int: %s", err.Error()), 400)
-		return
+	var i = 52
+	if ok {
+		var err error
+		i, err = strconv.Atoi(weeks[0])
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to convert weeks to int: %s", err.Error()), 400)
+			return
+		}
 	}
 
 	query, err := ioutil.ReadFile("sql/weeklyProfitStat.sql")

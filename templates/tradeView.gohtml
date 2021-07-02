@@ -647,6 +647,8 @@
 			        svg.select("g.rsi .axis.left").call(rsiAxisLeft);
 
 			        // We know the data does not change, a simple refresh that does not perform data joins will suffice.
+					svg.selectAll("g.left.annotation.BUY").call(ohlcAnnotation.refresh);
+					svg.selectAll("g.left.annotation.SELL").call(ohlcAnnotation.refresh);
 			        svg.select("g.candlestick").call(candlestick.refresh);
 			        svg.select("g.close.annotation").call(closeAnnotation.refresh);
 			        svg.select("g.volume").call(volume.refresh);
@@ -658,8 +660,7 @@
 			        svg.select("g.crosshair.ohlc").call(ohlcCrosshair.refresh);
 			        svg.select("g.crosshair.macd").call(macdCrosshair.refresh);
 			        svg.select("g.crosshair.rsi").call(rsiCrosshair.refresh);
-			        svg.selectAll("g.left.annotation.BUY").call(ohlcAnnotation.refresh);
-					svg.selectAll("g.left.annotation.SELL").call(ohlcAnnotation.refresh);
+
 			        // svg.select("g.supstances").call(supstance.refresh);
 			        svg.select("g.tradearrow").call(tradearrow.refresh);
 			    }
@@ -953,9 +954,9 @@
 
 
 		//CALLS TO DRAW THE CHARTS:
-		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv"
-		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv"
-		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv"
+		var entryPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/entry.csv?" + Math.random()
+		var exitPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/exit.csv?" + Math.random()
+		var dailyPath = "/charts/" + {{.Symbol}} + "/" + {{ .ID}} + "/day.csv?" + Math.random()
 		chart("Entry", entryPath);
 		// chart("Exit", exitPath,500, 300);
 

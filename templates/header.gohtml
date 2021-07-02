@@ -15,7 +15,7 @@
 			<li><i id="importIcon" class="angle right icon"></i><a href="/tpl/importTrades" class="header">Import Transactions</a></li>
 
 			{{if .LoggedIn}}
-			<li><span class="header">Status: Online</span></li>
+			<li><span class="header"><a href="/logOut">Log Out</a></span></li>
 			{{else}}
 			<li><a href="/authenticate" class="header">Log In</a></li>
 			{{end}}
