@@ -274,7 +274,12 @@ func (h *TDHandlers) DownloadCharts(w http.ResponseWriter, r *http.Request) {
 	//TODO:
 	//1)We in theory shouldcheck to make sure our trade is within the correct date frame. However, this would only
 	//cause an issue if we were pulling really old data.
-	//2)We assume we always want the latest data. Not sure why, but TD Ameritrade doesn't assume that. So we must set the endDate for right now so we get the latest data. In practice, when pulling a chart on the 19th of Feb 2021, the last cnadle we are getting is 17 Feb 2021. This is odd but when setting the endDate, we are then able to get the data from the 18th. The chart was pulled at 15:18 PST so assume that we can't pull the 19th data until the end of the day.
+	//2)We assume we always want the latest data. Not sure why,
+	//	but TD Ameritrade doesn't assume that. So we must set the endDate for
+	//	right now so we get the latest data. In practice, when pulling a chart on the
+	//	19th of Feb 2021, the last cnadle we are getting is 17 Feb 2021. This is odd but
+	//	when setting the endDate, we are then able to get the data from the 18th.
+	//	The chart was pulled at 15:18 PST so assume that we can't pull the 19th data until the end of the day.
 	optsD := tdameritrade.PriceHistoryOptions{
 		PeriodType:            "year",
 		FrequencyType:         "daily",
@@ -424,7 +429,7 @@ func (s *HTTPHeaderStore) StoreToken(token *oauth2.Token, w http.ResponseWriter,
 
 	result, err := db.db.Exec(updateStr, token.AccessToken, token.RefreshToken, token.Expiry.Format("2006-01-02 15:04:05.999999999 -0700 MST"))
 	if err != nil {
-		fmt.Println("Error setting token: %s", err.Error())
+		fmt.Printf("Error setting token: %s\n", err.Error())
 		return fmt.Errorf("Failed to set token in DB: %s", err.Error())
 	}
 
@@ -712,7 +717,7 @@ func (h *TDHandlers) SaveTransactions(w http.ResponseWriter, req *http.Request) 
 
 func (db *DbDao) insertTransactions(t *tdameritrade.Transactions) (int64, error) {
 
-	sqlStr := "INSERT IGNORE INTO tradeTransactions( orderId, Type ,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
+	sqlStr := "INSERT INTO tradeTransactions( orderId, Type ,ClearingReferenceNumber,SubAccount,SettlementDate,SMA,RequirementReallocationAmount,DayTradeBuyingPowerEffect,NetAmount,TransactionDate,OrderDate,TransactionSubType,TransactionID,CashBalanceEffectFlag,Description,ACHStatus,AccruedInterest,Fees,AccountID,Amount,Price,Cost,ParentOrderKey,ParentChildIndicator,Instruction,PositionEffect,Symbol,UnderlyingSymbol,OptionExpirationDate,OptionStrikePrice,PutCall,CUSIP,InstrumentDescription,AssetType,BondMaturityDate,BondInterestRate) VALUES "
 
 	vals := []interface{}{}
 	for _, row := range *t {
@@ -1040,10 +1045,10 @@ func (h *TDHandlers) SaveTrades(w http.ResponseWriter, req *http.Request) {
 				http.Error(w, fmt.Sprintf("Failed to update a row with id: %s|%s", j, err.Error()), 500)
 				return
 			}
-			num, err := result.RowsAffected()
-			if err != nil || num != 1 {
+			_, err = result.RowsAffected()
+			if err != nil {
 				tx.Rollback()
-				http.Error(w, fmt.Sprintf("Something went wrong with the result id: %s", j), 500)
+				http.Error(w, fmt.Sprintf("Something went wrong with the result id: %s, ERR: %s", j, err), 500)
 				return
 			}
 		}
@@ -1527,8 +1532,7 @@ func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryString := fmt.Sprintf(string(bs))
-	rows, err := db.db.Query(queryString)
+	rows, err := db.db.Query(string(bs))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to query db: %s", err.Error()), 500)
 		return
@@ -1539,11 +1543,14 @@ func GetEventsByQuery(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var e = Event{}
 		// e.Display = "background"
-		err := rows.Scan(&e.Title, &e.Date)
+		var titleString, dateString string
+		err := rows.Scan(&titleString, &dateString)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to scan rows: %s", err.Error()), 500)
+			http.Error(w, fmt.Sprintf("Failed to scan rows with query: %s Error:%s", name, err.Error()), 500)
 			return
 		}
+		e.Title = titleString
+		e.Date = dateString
 		e.Title = fmt.Sprintf("$%s", e.Title)
 		events = append(events, e)
 	}
@@ -1729,22 +1736,32 @@ func RenderHome(w http.ResponseWriter, r *http.Request, tokenState bool) {
 	}
 
 	err = db.db.QueryRow(string(bs)).Scan(&sr.Date, &sr.Trades, &sr.AvgProfit, &sr.AvgPercent, &sr.Gi, &sr.WinPercent, &sr.LossPercent, &sr.BigWinner, &sr.BigLoser)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to scan statRow for the month: %s", err.Error()), 500)
-		return
+	if err == nil {
+		t, err := time.Parse("2006-01-02", sr.Date)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse date from DB: %s", err.Error()), 500)
+			return
+		}
+		sr.Date = t.Format("January 2006")
 	}
 
-	t, err := time.Parse("2006-01-02", sr.Date)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to parse date from DB: %s", err.Error()), 500)
-		return
+		fmt.Println(err.Error())
+		fmt.Println(sql.ErrNoRows == err)
+		if err != sql.ErrNoRows {
+			http.Error(w, fmt.Sprintf("Failed to scan statRow for the month: %s", err.Error()), 500)
+			return
+		}
 	}
-
-	sr.Date = t.Format("January 2006")
 
 	//get the dates for the journal:
 	//if we knew sql a bit better, we could probably run only 1 query....
-	getDaysQuery := "select DATE_FORMAT(TransactionDate, '%Y-%m-%d') as date from tradeTransactions group by date order by date desc LIMIT 30;"
+	bs2, err := ioutil.ReadFile("sql/getJournalDates.sql")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read file getThisMonthStats.sql: %s", err.Error()), 500)
+		return
+	}
+	getDaysQuery := string(bs2)
 	dateRows, err := db.db.Query(getDaysQuery)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get days for journal: %s\n", err.Error()), 500)
@@ -2006,7 +2023,7 @@ func GetPLChart(w http.ResponseWriter, r *http.Request) {
 
 	query, err := ioutil.ReadFile("sql/weeklyProfitStat.sql")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to open the weeklyProfitStat.sql", err.Error()), 500)
+		http.Error(w, fmt.Sprintf("Failed to open the weeklyProfitStat.sql ERROR: %s\n", err.Error()), 500)
 		return
 	}
 
@@ -2015,7 +2032,7 @@ func GetPLChart(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			return
 		}
-		http.Error(w, fmt.Sprintf("Failed to get rows", err.Error()), 500)
+		http.Error(w, fmt.Sprintf("Failed to get rows during execution of sql/weeklyProfitStat.sql EEROR: %s\n", err.Error()), 500)
 		return
 	}
 
